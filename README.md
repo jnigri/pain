@@ -11,16 +11,9 @@ one block at a time, in the spirit of [monkeytype](https://monkeytype.com).
 There is no score and no timer. Typing keeps you active, so you take in what is
 on the page instead of skimming it.
 
-```
- notes.md  ◆ active                                  ━━━━━━━╺━━━━━━━━━━━━  35%
-
- Tides
- ━━━━━
-
- Tides are caused mainly by the gravity of the Moon. The Moon pulls harder
- on the side of the Earth that faces it█than on the far side, and this
- difference stretches the oceans into two bulges.
-```
+<p align="center">
+  <img src="docs/screenshot.png" width="720" alt="pain showing its own README: typed text is bright, the rest is dimmed, and the sentence being typed is underlined">
+</p>
 
 Text you have not typed yet is dimmed, and lights up in its real style as you
 type it.
@@ -29,6 +22,8 @@ type it.
 
 - **Rendered Markdown.** Headings, lists, tables, quotes and code look like
   what they are, not like raw Markdown.
+- **Images.** Pictures the file points to are drawn in place: sharp in Kitty
+  and Ghostty, in colored blocks in other terminals.
 - **Forgiving typing.** Punctuation fills itself in, case does not matter, and
   `é` accepts `e`. You can skip a sentence, a line or a block.
 - **Folders.** `pain DIR` lists your files with how much of each you have

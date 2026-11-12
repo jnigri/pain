@@ -105,6 +105,33 @@ the next block, and going back past its start moves into the previous one.
 `alt+enter` also skips a line, and terminals can send it for `shift+enter`,
 for example Ghostty with `keybind = shift+enter=text:\x1b\r`.
 
+### Images
+
+An image that is a file on your machine is drawn where the Markdown puts it,
+from `![alt](path)` or from a HyperText Markup Language (HTML) `<img>` tag.
+Relative paths start from the folder of the Markdown file. Images are never
+typed. They are centered, at most 20 lines tall, and never larger than their
+real size.
+
+How an image is drawn depends on the terminal:
+
+- **Kitty and Ghostty** show the real picture, through the
+  [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/).
+  Inside tmux this needs `set -g allow-passthrough on`; without it pain falls
+  back to blocks.
+- **Other terminals** show it in half-block characters, two pixels per
+  character. This is coarse: fine for a photo or a logo, not for a diagram
+  with small text.
+
+Set the `PAIN_IMAGES` environment variable to `kitty`, `blocks` or `off` to
+choose yourself. The formats read are Portable Network Graphics (PNG), Joint
+Photographic Experts Group (JPEG), Graphics Interchange Format (GIF, first
+frame only) and WebP.
+
+An image that cannot be drawn (a missing file, another format) is shown as a
+line with its alt text. Images from the web are not fetched: their alt text
+stays in the paragraph, to be typed like the rest.
+
 ### Keys
 
 | Key                              | Action                          |
@@ -270,6 +297,7 @@ under `internal/`, and imports only flow down this list:
 |------------|------|
 | `markdown` | walks the goldmark AST and flattens it into units; character folding and matching, word wrapping, sentence bounds, word counts. Knows nothing about the terminal. |
 | `theme`    | the 0x96f palette and `CellStyle`, which maps a cell's style and typing state to a Lip Gloss style |
+| `picture`  | an image file to lines of text: sent to the terminal and shown through placeholder characters (Kitty graphics protocol), or drawn in half-block characters |
 | `store`    | state kept between runs: atomic JSON files for saved positions, last file per folder, typing speed and conversations, plus the preferences file |
 | `view`     | drawing shared by the screens: `RenderUnit` (one unit to styled lines, with the sentence underline) and the key help box |
 | `reader`   | the file view: key handling, typing rules, viewport, asking Claude (`ask.go` runs `claude -p` and reads its stream, `askview.go` draws it), active reading (`sections.go` cuts a file into sections, `check.go` holds the checkpoints), the preferences and key screens |
@@ -281,9 +309,9 @@ under `internal/`, and imports only flow down this list:
 - **`markdown.Cell`**: one rune plus its inline style (`Attr` flags: bold,
   italic, code, link…) and a `Skip` flag. Skip cells are drawn but never typed.
 - **`markdown.Unit`**: one block to type. It holds its cells and how to
-  draw the block around them: kind (paragraph, heading, code, rule, spacer),
-  heading level, indent, list prefix, quote depth. Rules and spacers are
-  units too, so layout is simply "draw the units in order".
+  draw the block around them: kind (paragraph, heading, code, rule, spacer, image),
+  heading level, indent, list prefix, quote depth. Rules, spacers and images
+  are units too, so layout is simply "draw the units in order".
 - **`reader.Model`**: the Bubble Tea model for a file. `cur` is the index of
   the current unit and `typed` holds the runes entered for it, one per cell.
   Skip cells are copied into `typed` automatically (`autoSkip`), so `typed[i]`
@@ -355,7 +383,9 @@ palette constants (`theme.Yellow`…) rather than inline hex values, and
 
 ## Known limitations
 
-- Raw HTML is not rendered.
+- Raw HTML is not rendered, apart from the local images of its `<img>` tags.
+- Images from the web are not fetched, and Scalable Vector Graphics (SVG)
+  images are not drawn.
 - Code blocks have no syntax highlighting.
 - Line breaks inside a paragraph become a single space.
 - Very wide tables wrap instead of scrolling.

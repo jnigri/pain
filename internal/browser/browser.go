@@ -63,7 +63,7 @@ func Scan(path string, parent *Node) (*Node, error) {
 		if err != nil {
 			continue
 		}
-		units := markdown.Parse(src)
+		units := markdown.ParseIn(src, filepath.Dir(p))
 		n.kids = append(n.kids, &Node{name: name, Path: p, parent: n, units: units, stats: newFileStats(units)})
 	}
 	return n, nil

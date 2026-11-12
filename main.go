@@ -10,6 +10,7 @@ import (
 
 	"pain/internal/app"
 	"pain/internal/markdown"
+	"pain/internal/picture"
 	"pain/internal/reader"
 	"pain/internal/store"
 )
@@ -35,7 +36,9 @@ func main() {
 		if err != nil {
 			fail(err)
 		}
-		if _, err := tea.NewProgram(a, tea.WithAltScreen()).Run(); err != nil {
+		_, err = tea.NewProgram(a, tea.WithAltScreen()).Run()
+		picture.Release()
+		if err != nil {
 			fail(err)
 		}
 		return
@@ -44,14 +47,16 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	units := markdown.Parse(src)
+	units := markdown.ParseIn(src, filepath.Dir(path))
 
 	start := 0
 	if !*restart {
 		start = store.LoadProgress(path, len(units))
 	}
 	m := reader.New(path, src, units, start, store.LoadPrefs())
-	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
+	_, err = tea.NewProgram(m, tea.WithAltScreen()).Run()
+	picture.Release()
+	if err != nil {
 		fail(err)
 	}
 }

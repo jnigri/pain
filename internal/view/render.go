@@ -3,11 +3,14 @@
 package view
 
 import (
+	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 
 	"pain/internal/markdown"
+	"pain/internal/picture"
 	"pain/internal/theme"
 )
 
@@ -77,6 +80,32 @@ func RenderUnit(u *markdown.Unit, w int, c *Cursor, done bool) (lines []string, 
 
 	pw := runewidth.StringWidth(u.Prefix)
 	avail := textWidth(u, w)
+	if u.Kind == markdown.Image {
+		pic, ok := picture.Lines(u.Image, avail)
+		if !ok {
+			// What could not be drawn is named instead.
+			name := strings.TrimSpace(cellText(u.Cells))
+			if name == "" {
+				name = filepath.Base(u.Image)
+			}
+			pic = []string{theme.Fg(tint(theme.Overlay0)).Italic(true).Render(runewidth.Truncate("▨ "+name, max(avail, 1), "…"))}
+		}
+		// A picture sits in the middle of the room it has.
+		pad := ""
+		if ok && len(pic) > 0 {
+			pad = strings.Repeat(" ", max((avail-lipgloss.Width(pic[0]))/2, 0))
+		}
+		for i, l := range pic {
+			l = pad + l
+			if i == 0 {
+				l = theme.Fg(tint(theme.PrefixColor(u))).Render(u.Prefix) + l
+			} else {
+				l = strings.Repeat(" ", pw) + l
+			}
+			lines = append(lines, lead+l)
+		}
+		return lines, 0
+	}
 	ranges := markdown.Wrap(u.Cells, avail, u.Kind == markdown.CodeLine)
 
 	stateAt := func(i int) theme.State {
@@ -155,4 +184,12 @@ func RenderUnit(u *markdown.Unit, w int, c *Cursor, done bool) (lines []string, 
 		lines = append(lines, lead+theme.Fg(tint(theme.Dim(theme.Yellow))).Render(rule))
 	}
 	return lines, cursorLine
+}
+
+func cellText(cs []markdown.Cell) string {
+	rs := make([]rune, len(cs))
+	for i, c := range cs {
+		rs[i] = c.R
+	}
+	return string(rs)
 }

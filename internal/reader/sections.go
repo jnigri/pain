@@ -99,6 +99,8 @@ func sectionText(units []markdown.Unit, s section) string {
 		switch u.Kind {
 		case markdown.Spacer, markdown.Rule:
 			sb.WriteString("\n")
+		case markdown.Image:
+			sb.WriteString("[image: " + blockText(u) + "]\n")
 		case markdown.Heading:
 			sb.WriteString(strings.Repeat("#", max(u.Level, 1)) + " " + blockText(u) + "\n")
 		default:

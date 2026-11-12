@@ -6,6 +6,9 @@ package markdown
 
 import (
 	"fmt"
+	"net/url"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -46,6 +49,7 @@ const (
 	CodeLine
 	Rule
 	Spacer
+	Image // a picture, shown but never typed
 )
 
 // Unit is one thing to type: a paragraph, heading, list item, code line or table row.
@@ -58,10 +62,11 @@ type Unit struct {
 	ListDepth int    // nesting of the list the prefix belongs to, 0 for the outermost
 	Ordered   bool   // prefix is a number rather than a bullet
 	Quote     int    // blockquote depth
+	Image     string // for an Image, the file to show; Cells hold its alt text
 }
 
 func (u *Unit) Typeable() bool {
-	if u.Kind == Rule || u.Kind == Spacer {
+	if u.Kind == Rule || u.Kind == Spacer || u.Kind == Image {
 		return false
 	}
 	for _, c := range u.Cells {
@@ -83,13 +88,18 @@ type ctx struct {
 
 type builder struct {
 	src   []byte
+	dir   string
 	units []Unit
 }
 
-func Parse(src []byte) []Unit {
+func Parse(src []byte) []Unit { return ParseIn(src, "") }
+
+// ParseIn parses a file that sits in dir, which is where its relative image
+// paths start from.
+func ParseIn(src []byte, dir string) []Unit {
 	md := goldmark.New(goldmark.WithExtensions(extension.GFM))
 	doc := md.Parser().Parse(text.NewReader(src))
-	b := &builder{src: src}
+	b := &builder{src: src, dir: dir}
 	b.blocks(doc, ctx{})
 	for len(b.units) > 0 && b.units[len(b.units)-1].Kind == Spacer {
 		b.units = b.units[:len(b.units)-1]
@@ -126,10 +136,10 @@ func (b *builder) block(n ast.Node, c ctx) {
 		b.add(Unit{Kind: Heading, Level: n.Level, Cells: skipNumbering(tidy(b.inlines(n, 0)))}, c)
 		b.spacer(c)
 	case *ast.Paragraph:
-		b.add(Unit{Kind: Para, Cells: tidy(b.inlines(n, 0))}, c)
+		b.text(n, c)
 		b.spacer(c)
 	case *ast.TextBlock: // tight list item: no gap after it
-		b.add(Unit{Kind: Para, Cells: tidy(b.inlines(n, 0))}, c)
+		b.text(n, c)
 	case *ast.List:
 		num := n.Start
 		for item := n.FirstChild(); item != nil; item = item.NextSibling() {
@@ -186,12 +196,121 @@ func (b *builder) block(n ast.Node, c ctx) {
 		b.table(n, c)
 		b.spacer(c)
 	case *ast.HTMLBlock:
-		// raw HTML is not rendered
+		// Raw HTML is not rendered, apart from its images.
+		var sb strings.Builder
+		for i := 0; i < n.Lines().Len(); i++ {
+			seg := n.Lines().At(i)
+			sb.Write(seg.Value(b.src))
+		}
+		if imgs := b.htmlImages(sb.String()); len(imgs) > 0 {
+			for _, u := range imgs {
+				b.add(u, c)
+				c.indent, c.prefix = c.indent+runewidth.StringWidth(c.prefix), ""
+			}
+			b.spacer(c)
+		}
 	default:
 		if n.HasChildren() {
 			b.blocks(n, c)
 		}
 	}
+}
+
+// text adds a paragraph, then the pictures it holds. A paragraph of nothing
+// but pictures adds only those.
+func (b *builder) text(n ast.Node, c ctx) {
+	imgs, only := b.images(n)
+	if !only {
+		b.add(Unit{Kind: Para, Cells: tidy(b.inlines(n, 0))}, c)
+		c.indent, c.prefix = c.indent+runewidth.StringWidth(c.prefix), ""
+	}
+	for _, u := range imgs {
+		b.add(u, c)
+		c.indent, c.prefix = c.indent+runewidth.StringWidth(c.prefix), ""
+	}
+}
+
+// images finds the pictures in a paragraph that are files on this machine.
+// The others stay in the text, as their alt text. only tells whether the
+// paragraph holds nothing else.
+func (b *builder) images(n ast.Node) (imgs []Unit, only bool) {
+	only = true
+	_ = ast.Walk(n, func(ch ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch ch := ch.(type) {
+		case *ast.Image:
+			if u, ok := b.image(string(ch.Destination), tidy(b.inlines(ch, Italic))); ok {
+				imgs = append(imgs, u)
+			} else {
+				only = false
+			}
+			return ast.WalkSkipChildren, nil
+		case *ast.RawHTML:
+			var sb strings.Builder
+			for i := 0; i < ch.Segments.Len(); i++ {
+				seg := ch.Segments.At(i)
+				sb.Write(seg.Value(b.src))
+			}
+			imgs = append(imgs, b.htmlImages(sb.String())...)
+		case *ast.Text:
+			if strings.TrimSpace(string(ch.Segment.Value(b.src))) != "" {
+				only = false
+			}
+		case *ast.String, *ast.CodeSpan, *ast.AutoLink:
+			only = false
+		}
+		return ast.WalkContinue, nil
+	})
+	return imgs, only && len(imgs) > 0
+}
+
+var (
+	imgTag  = regexp.MustCompile(`(?is)<img\b[^>]*>`)
+	srcAttr = regexp.MustCompile(`(?is)\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)')`)
+	altAttr = regexp.MustCompile(`(?is)\balt\s*=\s*(?:"([^"]*)"|'([^']*)')`)
+)
+
+// htmlImages finds the <img> tags of raw HTML that show a file on this machine.
+func (b *builder) htmlImages(html string) []Unit {
+	var out []Unit
+	for _, tag := range imgTag.FindAllString(html, -1) {
+		src := srcAttr.FindStringSubmatch(tag)
+		if src == nil {
+			continue
+		}
+		alt := ""
+		if m := altAttr.FindStringSubmatch(tag); m != nil {
+			alt = m[1] + m[2]
+		}
+		if u, ok := b.image(src[1]+src[2], tidy(Cells(alt, Italic, false))); ok {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// image is the unit for a picture at dest, as written in the file. ok is
+// false for one that is not a file on this machine.
+func (b *builder) image(dest string, alt []Cell) (Unit, bool) {
+	if dest == "" || strings.Contains(dest, "://") || strings.HasPrefix(dest, "//") || strings.HasPrefix(dest, "data:") {
+		return Unit{}, false
+	}
+	if i := strings.IndexAny(dest, "?#"); i >= 0 {
+		dest = dest[:i]
+	}
+	if p, err := url.PathUnescape(dest); err == nil {
+		dest = p
+	}
+	dest = filepath.FromSlash(dest)
+	if !filepath.IsAbs(dest) && b.dir != "" {
+		dest = filepath.Join(b.dir, dest)
+	}
+	for i := range alt {
+		alt[i].Skip = true
+	}
+	return Unit{Kind: Image, Image: dest, Cells: alt}, true
 }
 
 func (b *builder) table(t *east.Table, c ctx) {
@@ -263,7 +382,10 @@ func (b *builder) inlines(n ast.Node, f Attr) []Cell {
 		case *ast.AutoLink:
 			out = append(out, Cells(string(ch.URL(b.src)), f|Link, false)...)
 		case *ast.Image:
-			out = append(out, b.inlines(ch, f|Italic|Link)...)
+			// One shown as a picture is not also in the text.
+			if _, ok := b.image(string(ch.Destination), nil); !ok {
+				out = append(out, b.inlines(ch, f|Italic|Link)...)
+			}
 		case *ast.RawHTML:
 		case *east.Strikethrough:
 			out = append(out, b.inlines(ch, f|Strike)...)

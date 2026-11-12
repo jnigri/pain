@@ -94,3 +94,38 @@ func TestUntypeable(t *testing.T) {
 		}
 	}
 }
+
+func TestParseImages(t *testing.T) {
+	src := "![A hand](img/hand.png)\n\n" +
+		"See ![the chart](chart%20one.png) here.\n\n" +
+		"![badge](https://example.com/b.svg)\n\n" +
+		"<p align=\"center\">\n  <img src=\"/abs/logo.png\" alt=\"Logo\">\n</p>\n"
+	type unit struct {
+		kind        Kind
+		text, image string
+	}
+	var got []unit
+	for _, u := range ParseIn([]byte(src), "/docs") {
+		if u.Kind != Spacer {
+			got = append(got, unit{u.Kind, str(u.Cells), u.Image})
+			if u.Kind == Image && u.Typeable() {
+				t.Errorf("image %q is typeable", u.Image)
+			}
+		}
+	}
+	want := []unit{
+		{Image, "A hand", "/docs/img/hand.png"},
+		{Para, "See here.", ""},
+		{Image, "the chart", "/docs/chart one.png"},
+		{Para, "badge", ""}, // not a local file: stays as its alt text
+		{Image, "Logo", "/abs/logo.png"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("units = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("unit %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}

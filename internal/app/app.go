@@ -4,6 +4,7 @@ package app
 
 import (
 	"os"
+	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -79,7 +80,7 @@ func (a *app) open(n *browser.Node) tea.Cmd {
 	if err != nil {
 		return nil
 	}
-	units := markdown.Parse(src)
+	units := markdown.ParseIn(src, filepath.Dir(n.Path))
 	a.b.Last = n.Path
 	store.SaveLastFile(a.root, n.Path)
 	m := reader.New(n.Path, src, units, store.LoadProgress(n.Path, len(units)), store.LoadPrefs())

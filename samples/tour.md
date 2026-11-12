@@ -56,6 +56,12 @@ Type a row as its cells separated by single spaces.
 | shift+tab | go back one block |
 | ctrl+p    | preferences       |
 
+## 7. Images
+
+A picture is drawn where the file puts it. You do not type it.
+
+![The pain hand, reaching for the keyboard](../docs/hand.png)
+
 ---
 
 That is the whole tour. 🎉
