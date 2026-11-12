@@ -131,10 +131,11 @@ type Model struct {
 	speed    store.TypingStats
 	W, H     int
 	showKeys bool
+	active   bool // the folder is read actively: checkpoints end each section
 }
 
 func New(root *Node, last string) *Model {
-	b := &Model{Root: root, dir: root, sel: map[*Node]int{}, Last: last}
+	b := &Model{Root: root, dir: root, sel: map[*Node]int{}, Last: last, active: store.LoadPrefs().IsActive(root.Path)}
 	b.Refresh()
 	if n := root.Find(last); n != nil {
 		b.Select(n)
@@ -245,6 +246,12 @@ func (b *Model) Update(msg tea.KeyMsg) (open *Node, quit bool) {
 			}
 			b.Refresh()
 		}
+	case "t":
+		p := store.LoadPrefs()
+		p.ToggleActive(b.Root.Path, b.Root.Path)
+		if p.Save() == nil {
+			b.active = p.IsActive(b.Root.Path)
+		}
 	case "q", "esc", "ctrl+c":
 		return nil, true
 	}
@@ -313,6 +320,9 @@ func (b *Model) View() string {
 func (b *Model) header(w int) string {
 	r := b.Root
 	left := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).Render(r.name)
+	if b.active {
+		left += theme.Fg(theme.Green).Render("  ◆ active")
+	}
 	const barW = 20
 	filled := barW * r.pct() / 100
 	parts := []string{
@@ -331,7 +341,7 @@ func (b *Model) header(w int) string {
 }
 
 func (b *Model) footer(w int) string {
-	help := "l open · h up · n next unread · x mark read · q quit · " + view.KeysHint
+	help := "l open · h up · n next unread · x mark read · t active reading · q quit · " + view.KeysHint
 	if f := b.Root.Find(b.Last); f != nil {
 		help = fmt.Sprintf("r resume %s (%d%%) · ", f.name, f.pct()) + help
 	}
@@ -437,5 +447,6 @@ var browseKeys = []view.KeyRow{
 	{Key: "n", Action: "select the next file not read yet"},
 	{Key: "r", Action: "reopen the last file you read"},
 	{Key: "x", Action: "mark the file read, or unread"},
+	{Key: "t", Action: "active reading on or off: a checkpoint ends each section"},
 	{Key: "q / esc / ctrl+c", Action: "quit"},
 }

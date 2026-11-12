@@ -18,6 +18,7 @@ var prefItems = []struct {
 	{"case sensitive", "a and A count as different letters", func(p *store.Prefs) *bool { return &p.CaseSensitive }},
 	{"skip punctuation", "typing the next letter fills in the punctuation before it", func(p *store.Prefs) *bool { return &p.SkipPunct }},
 	{"split ask view", "show questions and answers below the text instead of full screen", func(p *store.Prefs) *bool { return &p.SplitAsk }},
+	{"explain at checkpoints", "active reading: explain each section yourself instead of answering questions", func(p *store.Prefs) *bool { return &p.Explain }},
 }
 
 // The model row comes after the switches and opens the model picker.
@@ -49,7 +50,7 @@ func (m *Model) prefsView() string {
 		name = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Foreground)).Bold(true).Render("model")
 	}
 	rows = append(rows, mark+theme.Fg(theme.Blue).Render("[…]")+" "+name+"  "+theme.Fg(theme.Yellow).Render(modelName(m.prefs.Model)),
-		"      "+theme.Fg(theme.Overlay2).Render("the Claude model that answers your questions"))
+		"      "+theme.Fg(theme.Overlay2).Render("the Claude model that answers and writes the checkpoints"))
 	help := theme.Fg(theme.Overlay0).Render("↑/↓ move · space toggle · enter choose · esc close")
 	foot := theme.Fg(theme.Overlay0).Render(strings.Replace(store.PrefsPath(), os.Getenv("HOME"), "~", 1))
 	if m.prefErr != nil {

@@ -74,6 +74,10 @@ type askState struct {
 	ch       chan tea.Msg
 	hist     []store.AskEntry // newest first
 	sel      int
+	// review makes this a checkpoint: the reader explains section sec in
+	// their own words and Claude checks it. Nothing of it is saved.
+	review bool
+	sec    int
 }
 
 type askDeltaMsg struct {
@@ -444,15 +448,19 @@ func (m *Model) send() tea.Cmd {
 		return nil
 	}
 	var system strings.Builder
-	fmt.Fprintf(&system, "%s\n\nFile: %s\n", askPrompt, m.Path)
-	if i := m.askedUnit(a.entry); i >= 0 {
-		if s := m.section(i); s != "" {
-			fmt.Fprintf(&system, "Section: %s\n", s)
+	if a.review {
+		system.WriteString(m.reviewSystem(a.sec))
+	} else {
+		fmt.Fprintf(&system, "%s\n\nFile: %s\n", askPrompt, m.Path)
+		if i := m.askedUnit(a.entry); i >= 0 {
+			if s := m.section(i); s != "" {
+				fmt.Fprintf(&system, "Section: %s\n", s)
+			}
 		}
-	}
-	fmt.Fprintf(&system, "\n<file>\n%s\n</file>\n\n<block>\n%s\n</block>", m.src, a.entry.Block)
-	if a.entry.Selection != "" {
-		fmt.Fprintf(&system, "\n\nThe question is about this sentence of the block:\n<selection>\n%s\n</selection>", a.entry.Selection)
+		fmt.Fprintf(&system, "\n<file>\n%s\n</file>\n\n<block>\n%s\n</block>", m.src, a.entry.Block)
+		if a.entry.Selection != "" {
+			fmt.Fprintf(&system, "\n\nThe question is about this sentence of the block:\n<selection>\n%s\n</selection>", a.entry.Selection)
+		}
 	}
 	var prompt strings.Builder
 	if len(a.entry.Turns) > 0 {
@@ -493,6 +501,9 @@ func (a *askState) stop() {
 }
 
 func (m *Model) askEvent(msg tea.Msg) tea.Cmd {
+	if cmd, ok := m.genEvent(msg); ok {
+		return cmd
+	}
 	a := m.ask
 	switch msg := msg.(type) {
 	case askDeltaMsg:
@@ -519,8 +530,10 @@ func (m *Model) askEvent(msg tea.Msg) tea.Cmd {
 		}
 		a.entry.Turns = append(a.entry.Turns, store.AskTurn{Question: a.pending, Answer: msg.answer, Images: a.pendImg})
 		a.pending, a.partial, a.pendImg = "", "", nil
-		store.SaveAsk(m.Path, a.entry)
-		m.asked[a.entry.Unit] = true
+		if !a.review {
+			store.SaveAsk(m.Path, a.entry)
+			m.asked[a.entry.Unit] = true
+		}
 	}
 	return nil
 }
@@ -528,7 +541,7 @@ func (m *Model) askEvent(msg tea.Msg) tea.Cmd {
 func (m *Model) updateAsk(msg tea.KeyMsg) tea.Cmd {
 	a := m.ask
 	key := msg.String()
-	if key == "ctrl+r" && a.mode != askStream && a.mode != askHistory {
+	if key == "ctrl+r" && a.mode != askStream && a.mode != askHistory && !a.review {
 		all := store.ReadAsks()[m.Path]
 		a.hist = make([]store.AskEntry, len(all))
 		for i, e := range all {
@@ -573,6 +586,15 @@ func (m *Model) updateAsk(msg tea.KeyMsg) tea.Cmd {
 		case tea.KeyEnter:
 			return m.send()
 		case tea.KeyTab:
+			// On a checkpoint not answered yet, tab goes to the questions.
+			if a.review {
+				if len(a.entry.Turns) == 0 {
+					m.ask = nil
+					m.setExplain(false)
+					return m.openQuiz(a.sec)
+				}
+				break
+			}
 			// Same switch as tab on the text, which follows it.
 			if a.canWiden() {
 				a.toggleScope()
@@ -619,6 +641,9 @@ func (m *Model) updateAsk(msg tea.KeyMsg) tea.Cmd {
 		case "enter", "r":
 			a.mode, a.follow = askInput, true
 		case "n":
+			if a.review {
+				break
+			}
 			a.entry = store.AskEntry{Unit: a.entry.Unit, Block: a.entry.Block, Selection: a.entry.Selection}
 			a.mode, a.scroll, a.follow = askInput, 0, true
 			a.input.Reset()
@@ -629,7 +654,9 @@ func (m *Model) updateAsk(msg tea.KeyMsg) tea.Cmd {
 		case " ":
 			a.scroll += m.h / 2
 		case "g":
-			m.jump(m.askedUnit(a.entry))
+			if !a.review {
+				m.jump(m.askedUnit(a.entry))
+			}
 		}
 	case askHistory:
 		switch key {

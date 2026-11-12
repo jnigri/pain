@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 )
 
 type Prefs struct {
@@ -18,6 +20,35 @@ type Prefs struct {
 	// "sonnet" or a full model name. Empty until chosen; ModelDefault leaves
 	// it to Claude Code's own settings.
 	Model string `json:"model,omitempty"`
+	// Explain makes a checkpoint ask for the section in your own words
+	// instead of asking questions about it.
+	Explain bool `json:"checkpoint_explain"`
+	// Active lists the folders and files read actively: a checkpoint ends
+	// each section of the files under them.
+	Active []string `json:"active_reading,omitempty"`
+}
+
+// covers tells whether path is dir or sits under it.
+func covers(dir, path string) bool {
+	sep := string(filepath.Separator)
+	return path == dir || strings.HasPrefix(path, strings.TrimSuffix(dir, sep)+sep)
+}
+
+// IsActive tells whether path, or a folder above it, is read actively.
+func (p Prefs) IsActive(path string) bool {
+	return slices.ContainsFunc(p.Active, func(a string) bool { return covers(a, path) })
+}
+
+// ToggleActive turns active reading on for scope when path is not read
+// actively, and otherwise off for everything that covers path. It returns the
+// new state.
+func (p *Prefs) ToggleActive(scope, path string) bool {
+	if p.IsActive(path) {
+		p.Active = slices.DeleteFunc(p.Active, func(a string) bool { return covers(a, path) })
+		return false
+	}
+	p.Active = append(p.Active, scope)
+	return true
 }
 
 // ModelDefault is the Model setting that passes no --model flag.

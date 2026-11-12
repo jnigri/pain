@@ -14,6 +14,7 @@ var docKeys = []view.KeyRow{
 	{Key: "shift+tab", Action: "go back one block"},
 	{Key: "↑ / ↓", Action: "scroll (pgup / pgdown for a page)"},
 	{Key: "ctrl+a", Action: "ask Claude about the underlined sentence or block"},
+	{Key: "ctrl+t", Action: "active reading on or off: a checkpoint ends each section"},
 	{Key: "ctrl+p", Action: "preferences"},
 	{Key: "esc / ctrl+c", Action: "save your position and quit"},
 }
@@ -38,13 +39,35 @@ var askKeys = []view.KeyRow{
 	{Key: "esc", Action: "cancel a running question, or go back"},
 }
 
+var quizKeys = []view.KeyRow{
+	{Key: "↑ / ↓ / j / k", Action: "move between the choices"},
+	{Key: "enter / space", Action: "answer with the choice selected, then go on"},
+	{Key: "1 – 9", Action: "answer with that choice"},
+	{Key: "tab", Action: "explain the section in your own words instead"},
+	{Key: "r", Action: "try again when the questions could not be written"},
+	{Key: "esc", Action: "skip the checkpoint"},
+}
+
+var reviewKeys = []view.KeyRow{
+	{Key: "enter", Action: "send your explanation; on the feedback, reply"},
+	{Key: "tab", Action: "before sending, answer questions instead"},
+	{Key: "ctrl+v", Action: "attach the image on the clipboard"},
+	{Key: "↑ / ↓", Action: "scroll (pgup / pgdown for a page)"},
+	{Key: "esc", Action: "cancel a running check, skip, or carry on reading"},
+}
+
 // keysView lists every key of the screen you are on.
 func (m *Model) keysView() string {
 	title, rows := "keys", docKeys
 	if m.Folder {
 		rows = append(rows[:len(rows)-1:len(rows)-1], folderDocKeys...)
 	}
-	if m.ask != nil {
+	switch {
+	case m.quiz != nil:
+		title, rows = "keys · checkpoint", quizKeys
+	case m.ask != nil && m.ask.review:
+		title, rows = "keys · checkpoint", reviewKeys
+	case m.ask != nil:
 		title, rows = "keys · ask", askKeys
 	}
 	return view.KeysBox(m.w, m.h, title, rows)

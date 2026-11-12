@@ -52,7 +52,7 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Quit
 		}
 		if open != nil {
-			a.open(open)
+			return a, a.open(open)
 		}
 	}
 	return a, nil
@@ -74,10 +74,10 @@ func (a *app) back(path string, finished bool) {
 	}
 }
 
-func (a *app) open(n *browser.Node) {
+func (a *app) open(n *browser.Node) tea.Cmd {
 	src, err := os.ReadFile(n.Path)
 	if err != nil {
-		return
+		return nil
 	}
 	units := markdown.Parse(src)
 	a.b.Last = n.Path
@@ -86,11 +86,12 @@ func (a *app) open(n *browser.Node) {
 	if m.Finished {
 		// Nothing to type in it.
 		a.back(n.Path, true)
-		return
+		return nil
 	}
-	m.Folder = true
+	m.Folder, m.Scope = true, a.root
 	m.Update(tea.WindowSizeMsg{Width: a.w, Height: a.h})
 	a.doc = m
+	return m.Init()
 }
 
 func (a *app) View() string {

@@ -15,7 +15,11 @@ import (
 func (m *Model) askView() string {
 	cw := m.contentWidth()
 	margin := strings.Repeat(" ", max((m.w-cw)/2, 0))
-	title := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).Render("ask")
+	label := "ask"
+	if m.ask.review {
+		label = "checkpoint"
+	}
+	title := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).Render(label)
 	name := theme.Fg(theme.Subtext0).Render(filepath.Base(m.Path))
 	gap := max(cw-lipgloss.Width(title)-lipgloss.Width(name), 1)
 	var sb strings.Builder
@@ -37,7 +41,7 @@ func rule(w int, label string) string {
 }
 
 // textLines renders plain text wrapped to w, through the normal unit drawing.
-// A prefix is drawn in the ordered-list colour.
+// A prefix is drawn in the ordered-list color.
 func textLines(s string, w int, prefix string, quote int) []string {
 	u := markdown.Unit{Kind: markdown.Para, Cells: markdown.Cells(s, 0, false), Prefix: prefix, Ordered: true, Quote: quote}
 	lines, _ := view.RenderUnit(&u, w, nil, true)
@@ -62,12 +66,18 @@ func (m *Model) askPane(cw, h int) []string {
 
 	// The block or sentence, drawn as in the document when it is still there.
 	var top []string
-	i := m.askedUnit(a.entry)
+	i := -1
+	if !a.review {
+		i = m.askedUnit(a.entry)
+	}
 	var sel []markdown.Cell
 	if i >= 0 && a.entry.Selection != "" {
 		sel = selectionCells(&m.units[i], a.entry.Selection)
 	}
 	switch {
+	case a.review:
+		top = wrapped(theme.Fg(theme.Subtext0), m.check.secs[a.sec].title, cw, "")
+		top = append(top, "", theme.Fg(theme.Subtext1).Render("Explain this section in your own words, without looking back."))
 	case sel != nil:
 		u := m.units[i]
 		u.Quote++
@@ -155,6 +165,16 @@ func (m *Model) askPane(cw, h int) []string {
 		help = "esc cancel"
 	case askAnswer:
 		help = "enter reply · n new · esc back"
+	}
+	if a.review {
+		switch {
+		case a.mode == askAnswer:
+			help = "enter reply · esc carry on"
+		case a.mode == askInput && len(a.entry.Turns) == 0:
+			help = "enter send · tab questions instead · esc skip"
+		case a.mode == askInput:
+			help = "enter send · esc back"
+		}
 	}
 	help += " · " + view.KeysHint
 	if maxScroll > 0 {

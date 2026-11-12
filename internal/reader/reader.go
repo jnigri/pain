@@ -57,6 +57,13 @@ type Model struct {
 	lastKey time.Time
 	words   int
 	secs    float64
+	// Scope is what ctrl+t turns active reading on for: the folder the file
+	// was opened from. Empty, it is the file alone.
+	Scope  string
+	check  *checks    // nil unless the file is read actively
+	quiz   *quizState // the checkpoint asking questions, while open
+	notice string     // shown in place of the help until the next key
+	closed bool       // the folder view was asked to take over
 }
 
 // CloseMsg asks the folder view to take over again.
@@ -73,6 +80,7 @@ func (m *Model) leave() {
 	}
 	store.AddTypingStats(m.words, m.secs)
 	m.words, m.secs = 0, 0
+	m.stopGen()
 }
 
 // tick counts the time since the last typing key, up to maxKeyGap.
@@ -90,6 +98,9 @@ func New(path string, src []byte, units []markdown.Unit, start int, p store.Pref
 	m.loadAsked()
 	m.cur = start - 1
 	m.next()
+	if p.IsActive(path) {
+		m.setupChecks()
+	}
 	return m
 }
 
@@ -124,12 +135,21 @@ func (m *Model) match(typed, want rune) bool {
 	return markdown.Matches(typed, want, m.prefs.CaseSensitive)
 }
 
-func (m *Model) Init() tea.Cmd { return nil }
+// Init has Claude write the questions of a file read actively.
+func (m *Model) Init() tea.Cmd { return m.startGen() }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	wasFinished := m.Finished
+	// A key that types past the end of a section opens its checkpoint.
+	_, isKey := msg.(tea.KeyMsg)
+	typing := isKey && !m.Finished && m.ask == nil && m.pick == nil && !m.showPref && !m.showKeys
+	before := m.cur
 	_, cmd := m.update(msg)
-	if m.Folder && m.Finished && !wasFinished {
+	if typing {
+		cmd = tea.Batch(cmd, m.checkpoint(before))
+	}
+	// The last checkpoint comes before going back to the folder.
+	if m.Folder && m.Finished && !m.closed && !m.checking() {
+		m.closed = true
 		m.leave()
 		return m, closeDoc(true)
 	}
@@ -144,19 +164,23 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case askDeltaMsg, askDoneMsg:
 		return m, m.askEvent(msg)
 	case tea.KeyMsg:
+		m.notice = ""
 		// The key list closes on any key.
 		if m.showKeys {
 			m.showKeys = false
 			return m, nil
 		}
 		// Terminals send ctrl+/ as ctrl+_.
-		if msg.Type == tea.KeyCtrlUnderscore && !m.showPref && !m.Finished {
+		if msg.Type == tea.KeyCtrlUnderscore && !m.showPref && (!m.Finished || m.checking()) {
 			m.showKeys = true
 			return m, nil
 		}
 		if m.pick != nil {
 			m.updatePicker(msg.String())
 			return m, nil
+		}
+		if m.quiz != nil {
+			return m, m.updateQuiz(msg)
 		}
 		if m.ask != nil {
 			return m, m.updateAsk(msg)
@@ -220,6 +244,8 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.openAsk()
 			}
+		case tea.KeyCtrlT:
+			return m, m.toggleActive()
 		case tea.KeyTab:
 			m.wholeBlock = !m.wholeBlock
 		case tea.KeyShiftTab:
@@ -578,6 +604,13 @@ func (m *Model) View() string {
 	if m.showKeys {
 		return m.keysView()
 	}
+	if m.quiz != nil {
+		return m.quizView()
+	}
+	// A checkpoint takes the whole screen, also at the end of the file.
+	if m.ask != nil && m.ask.review {
+		return m.askView()
+	}
 	if m.Finished {
 		return m.finishView()
 	}
@@ -621,6 +654,9 @@ func (m *Model) View() string {
 	}
 	if m.scroll != 0 {
 		help = "↑/↓ scroll · type or esc to return to the cursor"
+	}
+	if m.notice != "" {
+		help = m.notice
 	}
 	help = theme.Fg(theme.Overlay0).Render(help)
 	sb.WriteString("\n" + margin + help)
@@ -694,6 +730,9 @@ func (m *Model) header(cw int) string {
 		theme.Fg(theme.Overlay0).Render(strings.Repeat("━", barW-filled))
 	right := bar + theme.Fg(theme.Subtext0).Render(fmt.Sprintf(" %3d%%", pct))
 	left := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).Render(filepath.Base(m.Path))
+	if m.check != nil {
+		left += theme.Fg(theme.Green).Render("  ◆ active")
+	}
 	gap := max(cw-lipgloss.Width(left)-lipgloss.Width(right), 1)
 	return left + strings.Repeat(" ", gap) + right
 }
