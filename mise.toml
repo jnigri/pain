@@ -1,0 +1,31 @@
+[tools]
+go = "1.27.3"
+
+[tasks.setup]
+description = "Download Go module dependencies"
+run = "go mod download"
+
+[tasks.build]
+description = "Build ./pain"
+run = "go build -o pain ."
+
+[tasks.install]
+description = "Install pain into $GOBIN"
+run = "go install ."
+
+[tasks.tour]
+description = "Run pain on the bundled tour"
+depends = ["build"]
+run = "./pain samples/tour.md"
+
+[tasks.check]
+description = "Format check, vet and test"
+run = [
+  "test -z \"$(gofmt -l .)\" || (gofmt -l . && exit 1)",
+  "go vet ./...",
+  "go test ./...",
+]
+
+[tasks.fmt]
+description = "Format Go sources"
+run = "gofmt -w ."
