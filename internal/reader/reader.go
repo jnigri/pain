@@ -46,6 +46,7 @@ type Model struct {
 	wholeBlock bool
 	prefSel    int
 	prefErr    error
+	pick       *picker // model choice, over everything else while open
 	ask        *askState
 	asked      map[int]bool // units with a conversation
 	scroll     int          // lines the view is moved down from the cursor, up when negative
@@ -153,6 +154,10 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showKeys = true
 			return m, nil
 		}
+		if m.pick != nil {
+			m.updatePicker(msg.String())
+			return m, nil
+		}
 		if m.ask != nil {
 			return m, m.updateAsk(msg)
 		}
@@ -210,7 +215,11 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, closeDoc(false)
 			}
 		case tea.KeyCtrlA:
-			m.openAsk()
+			if m.prefs.Model == "" {
+				m.pick = newPicker("", true)
+			} else {
+				m.openAsk()
+			}
 		case tea.KeyTab:
 			m.wholeBlock = !m.wholeBlock
 		case tea.KeyShiftTab:
@@ -266,10 +275,14 @@ func (m *Model) updatePrefs(msg tea.KeyMsg) {
 	case "esc", "q", "ctrl+c":
 		m.showPref = false
 	case "up", "k", "shift+tab":
-		m.prefSel = (m.prefSel + len(prefItems) - 1) % len(prefItems)
+		m.prefSel = (m.prefSel + prefRows - 1) % prefRows
 	case "down", "j", "tab":
-		m.prefSel = (m.prefSel + 1) % len(prefItems)
+		m.prefSel = (m.prefSel + 1) % prefRows
 	case " ", "enter", "x":
+		if m.prefSel == modelRow {
+			m.pick = newPicker(m.prefs.Model, false)
+			return
+		}
 		f := prefItems[m.prefSel].field(&m.prefs)
 		*f = !*f
 		m.prefErr = m.prefs.Save()
@@ -555,6 +568,9 @@ func (m *Model) linesFor(i int) []string {
 func (m *Model) View() string {
 	if m.w == 0 {
 		return ""
+	}
+	if m.pick != nil {
+		return m.pickerView()
 	}
 	if m.showPref {
 		return m.prefsView()

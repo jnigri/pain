@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -333,7 +334,17 @@ func userMessage(question string, images []string) ([]byte, error) {
 
 // startAsk runs claude in the background. Its output arrives as askDeltaMsg
 // values and one askDoneMsg on the returned channel, which is closed after.
-func startAsk(ctx context.Context, system, question string, images []string) chan tea.Msg {
+// askArgs are the claude flags for one question. An empty or default model
+// passes no --model, so Claude Code's own setting applies.
+func askArgs(model, system string) []string {
+	args := slices.Concat(claudeArgs, []string{"--system-prompt", system})
+	if model != "" && model != store.ModelDefault {
+		args = append(args, "--model", model)
+	}
+	return args
+}
+
+func startAsk(ctx context.Context, model, system, question string, images []string) chan tea.Msg {
 	ch := make(chan tea.Msg)
 	go func() {
 		defer close(ch)
@@ -350,7 +361,7 @@ func startAsk(ctx context.Context, system, question string, images []string) cha
 			send(askDoneMsg{ch: ch, err: err})
 			return
 		}
-		cmd := exec.CommandContext(ctx, "claude", append(claudeArgs, "--system-prompt", system)...)
+		cmd := exec.CommandContext(ctx, "claude", askArgs(model, system)...)
 		cmd.Dir = os.TempDir()
 		cmd.Stdin = bytes.NewReader(append(input, '\n'))
 		var stderr bytes.Buffer
@@ -459,7 +470,7 @@ func (m *Model) send() tea.Cmd {
 	a.input.Reset()
 	a.pendImg, a.images = a.images, nil
 	a.mode, a.err, a.follow = askStream, "", true
-	a.cancel, a.ch = cancel, startAsk(ctx, system.String(), prompt.String(), a.pendImg)
+	a.cancel, a.ch = cancel, startAsk(ctx, m.prefs.Model, system.String(), prompt.String(), a.pendImg)
 	return waitAsk(a.ch)
 }
 

@@ -20,6 +20,12 @@ var prefItems = []struct {
 	{"split ask view", "show questions and answers below the text instead of full screen", func(p *store.Prefs) *bool { return &p.SplitAsk }},
 }
 
+// The model row comes after the switches and opens the model picker.
+var (
+	modelRow = len(prefItems)
+	prefRows = len(prefItems) + 1
+)
+
 func (m *Model) prefsView() string {
 	title := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).Render("preferences")
 	var rows []string
@@ -36,7 +42,15 @@ func (m *Model) prefsView() string {
 		}
 		rows = append(rows, mark+box+" "+name, "      "+theme.Fg(theme.Overlay2).Render(it.desc))
 	}
-	help := theme.Fg(theme.Overlay0).Render("↑/↓ move · space toggle · esc close")
+	name := theme.Fg(theme.Subtext1).Render("model")
+	mark := "  "
+	if m.prefSel == modelRow {
+		mark = theme.Fg(theme.Yellow).Render("› ")
+		name = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Foreground)).Bold(true).Render("model")
+	}
+	rows = append(rows, mark+theme.Fg(theme.Blue).Render("[…]")+" "+name+"  "+theme.Fg(theme.Yellow).Render(modelName(m.prefs.Model)),
+		"      "+theme.Fg(theme.Overlay2).Render("the Claude model that answers your questions"))
+	help := theme.Fg(theme.Overlay0).Render("↑/↓ move · space toggle · enter choose · esc close")
 	foot := theme.Fg(theme.Overlay0).Render(strings.Replace(store.PrefsPath(), os.Getenv("HOME"), "~", 1))
 	if m.prefErr != nil {
 		foot = theme.Fg(theme.Red).Render("could not save: " + m.prefErr.Error())

@@ -14,7 +14,14 @@ type Prefs struct {
 	SkipPunct bool `json:"skip_punctuation"`
 	// SplitAsk shows questions and answers below the text instead of full screen.
 	SplitAsk bool `json:"ask_split"`
+	// Model answers questions, passed to claude as --model: an alias such as
+	// "sonnet" or a full model name. Empty until chosen; ModelDefault leaves
+	// it to Claude Code's own settings.
+	Model string `json:"model,omitempty"`
 }
+
+// ModelDefault is the Model setting that passes no --model flag.
+const ModelDefault = "default"
 
 var defaultPrefs = Prefs{CaseSensitive: false, SkipPunct: true}
 
