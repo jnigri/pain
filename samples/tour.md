@@ -2,7 +2,7 @@
 
 This file shows every element pain knows how to render. Type through it to see
 how each one behaves. Text you have not typed yet is dimmed; text you have typed
-lights up in its real colours.
+lights up in its real colors.
 
 ## 1. Inline styles
 

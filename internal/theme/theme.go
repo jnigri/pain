@@ -61,7 +61,7 @@ func headingColor(level int) string {
 	return Teal
 }
 
-// PrefixColor is the colour of a unit's list marker: numbers in yellow,
+// PrefixColor is the color of a unit's list marker: numbers in yellow,
 // bullets cycling through pink, purple and blue by nesting.
 func PrefixColor(u *markdown.Unit) string {
 	if u.Ordered {
@@ -129,14 +129,14 @@ func CellStyle(u *markdown.Unit, f markdown.Attr, st State, focus bool) lipgloss
 
 // Dotted wraps already styled text in a dotted underline (SGR 4:4), so links
 // stay distinct from the solid underline of the focused sentence. Terminals
-// without styled underlines drop it and links show by colour alone.
+// without styled underlines drop it and links show by color alone.
 func Dotted(s string) string { return "\x1b[4:4m" + s + "\x1b[24m" }
 
 func Fg(hex string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(hex))
 }
 
-// Dim pulls a colour halfway toward the background, for text not typed yet.
+// Dim pulls a color halfway toward the background, for text not typed yet.
 func Dim(hex string) string { return blend(hex, Background, 0.5) }
 
 func blend(a, b string, t float64) string {
