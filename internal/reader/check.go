@@ -23,14 +23,14 @@ import (
 // Claude wrote about it when the file was first opened, or the section
 // explained in your own words, which Claude then checks.
 
-const quizPrompt = `You write multiple-choice questions that check whether a reader understood a document they are reading section by section. After each section, the reader answers your questions about it before moving on.
+const quizPrompt = `You write quick multiple-choice questions for someone reading a document section by section. After each section, they answer your questions about it before moving on. The questions are not a test and must not try to catch the reader out: they keep the reading active, check that the section was read, and help its main ideas stick.
 
-For each section, write 2 or 3 questions, or 1 if the section is very short. Ask about the ideas that matter: what the section claims, why, how things relate, what follows from them. Do not ask about trivia, exact wording, numbers nobody would remember, or the layout of the document. A reader who understood the section should find the questions easy, and one who skimmed it should not be able to guess.
+For each section, write 1 or 2 questions, 1 if the section is short. Ask about the main point of the section, the thing a reader should take away, never about details, exact wording, numbers or the layout of the document. Someone who read the section should get it right without hesitating.
 
-Each question has 4 choices of similar length and style. Exactly one is correct; the others are plausible but clearly wrong to someone who understood. Do not use "all of the above" or "none of the above". "why" is one short sentence saying why the correct choice is right. Write plain text without Markdown, in the language of the document.
+Keep everything short and easy to read at a glance. The question is one short sentence. Each choice is a few words, at most about 8, never a full sentence when a phrase will do. Give 3 choices of similar length: exactly one is right, and the others are clearly wrong to anyone who read the section, with no trick wording, near-synonyms or half-right answers. Do not use "all of the above" or "none of the above". "why" is one short sentence recalling the point. Write plain text without Markdown, in the language of the document.
 
 Reply with JSON only, one entry per section, in order:
-{"sections":[{"questions":[{"q":"...","choices":["...","...","...","..."],"answer":0,"why":"..."}]}]}
+{"sections":[{"questions":[{"q":"...","choices":["...","...","..."],"answer":0,"why":"..."}]}]}
 "answer" is the index of the correct choice, counting from 0.`
 
 const reviewPrompt = `You check that someone reading a Markdown file understood the section they just finished. They explain the section in their own words, from memory, and you tell them whether they got it.
@@ -64,7 +64,9 @@ type quizState struct {
 
 // setupChecks turns checkpoints on for this file, reusing saved questions.
 func (m *Model) setupChecks() {
-	sum := sha256.Sum256(m.src)
+	// The prompt is part of the hash, so questions written by an older
+	// prompt are written again.
+	sum := sha256.Sum256(append([]byte(quizPrompt), m.src...))
 	c := &checks{secs: splitSections(m.units), hash: hex.EncodeToString(sum[:8]), passed: map[int]bool{}}
 	c.quiz = store.LoadQuiz(m.Path, c.hash, len(c.secs))
 	m.check = c

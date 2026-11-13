@@ -219,8 +219,9 @@ join the next one.
 A checkpoint comes in two kinds, and `tab` switches between them. pain
 remembers the one you used last.
 
-- **Questions.** The first time you open a file, Claude writes two or three
-  multiple-choice questions per section, in the background while you type. At
+- **Questions.** The first time you open a file, Claude writes one or two
+  quick multiple-choice questions per section, in the background while you
+  type: short choices, on the main point, never trick questions. At
   the checkpoint, pick a choice with `↑` / `↓` and `enter`, or with its number.
   pain shows the right choice and one line on why. The questions are kept in
   `quizzes.json` and written again only when the file changes.
