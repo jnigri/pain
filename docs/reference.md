@@ -167,6 +167,8 @@ stays in the paragraph, to be typed like the rest.
 | `ctrl+e`                         | explain the selection in your own words, and have Claude check it |
 | `ctrl+g`                         | with active reading, answer the questions of the section you are in |
 | `ctrl+t`                         | turn active reading on or off   |
+| `↑` / `↓`                        | scroll; any other key brings the cursor back |
+| `ctrl+u` / `ctrl+d`              | scroll up / down half a page (`pgup` / `pgdown` too) |
 | `ctrl+p`                         | open or close the preferences   |
 | `ctrl+/`                         | list every key of the screen you are on |
 | `esc` / `ctrl+c`                 | save your position and quit; from a folder, `esc` goes back to it |
@@ -215,7 +217,7 @@ no tools, so it only answers.
 | `ctrl+v`      | attach the image on the clipboard to the question           |
 | `←` / `→`     | move in the question; with `alt` (or `alt+b` / `alt+f`), by word; `ctrl+a` / `ctrl+e` to the start / end |
 | `ctrl+w` / `ctrl+k` / `ctrl+u` | delete the word before the cursor / to the end / to the start |
-| `↑` / `↓`     | scroll the answer (`pgup` / `pgdown` for a page)            |
+| `↑` / `↓`     | scroll the answer (`pgup` / `pgdown` for half a page; on an answer, `ctrl+u` / `ctrl+d` too) |
 | `ctrl+r`      | list the conversations about this file, newest first; `enter` opens one, and you can carry it on |
 | `g`           | on an answer or in the list, go to the block it was about   |
 | `esc`         | cancel a running question, or go back                       |

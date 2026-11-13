@@ -13,7 +13,7 @@ var docKeys = []view.KeyRow{
 	{Key: "ctrl+t", Action: "active reading on or off: a checkpoint ends each section"},
 	{Key: "backspace", Action: "delete one character (ctrl+w / alt+backspace: one word)"},
 	{Key: "enter", Action: "type the next space"},
-	{Key: "↑ / ↓", Action: "scroll (pgup / pgdown for a page)"},
+	{Key: "↑ / ↓", Action: "scroll (ctrl+u / ctrl+d or pgup / pgdown: half a page)"},
 	{Key: "ctrl+p", Action: "preferences"},
 	{Key: "esc / ctrl+c", Action: "save your position and quit"},
 }
@@ -32,7 +32,7 @@ var askKeys = []view.KeyRow{
 	{Key: "← / →", Action: "move in the question; with alt, by word"},
 	{Key: "ctrl+a / ctrl+e", Action: "go to the start / end of the question"},
 	{Key: "ctrl+w / ctrl+k / ctrl+u", Action: "delete word / to the end / to the start"},
-	{Key: "↑ / ↓", Action: "scroll (pgup / pgdown for a page)"},
+	{Key: "↑ / ↓", Action: "scroll (pgup / pgdown: half a page; on an answer, ctrl+u / ctrl+d too)"},
 	{Key: "ctrl+r", Action: "list the conversations about this file"},
 	{Key: "g", Action: "on an answer or in the list, go to the block"},
 	{Key: "esc", Action: "cancel a running question, or go back"},
@@ -55,7 +55,7 @@ var reviewKeys = []view.KeyRow{
 	{Key: "tab", Action: "at a checkpoint, before sending: answer questions instead"},
 	{Key: "ctrl+v", Action: "attach the image on the clipboard"},
 	{Key: "← / →", Action: "move in the text; with alt, by word"},
-	{Key: "↑ / ↓", Action: "scroll (pgup / pgdown for a page)"},
+	{Key: "↑ / ↓", Action: "scroll (pgup / pgdown: half a page; on an answer, ctrl+u / ctrl+d too)"},
 	{Key: "esc", Action: "cancel a running check, skip, or carry on reading"},
 }
 

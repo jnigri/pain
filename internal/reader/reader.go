@@ -244,10 +244,10 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "down":
 			m.scroll++
 			return m, nil
-		case "pgup":
+		case "pgup", "ctrl+u":
 			m.scroll -= m.h / 2
 			return m, nil
-		case "pgdown":
+		case "pgdown", "ctrl+d":
 			m.scroll += m.h / 2
 			return m, nil
 		}

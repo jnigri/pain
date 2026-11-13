@@ -594,6 +594,15 @@ func (m *Model) updateAsk(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	if a.mode != askHistory {
+		// While typing, ctrl+u and ctrl+d edit the text instead.
+		if a.mode != askInput {
+			switch key {
+			case "ctrl+u":
+				key = "pgup"
+			case "ctrl+d":
+				key = "pgdown"
+			}
+		}
 		switch key {
 		case "up":
 			a.scroll, a.follow = max(a.scroll-1, 0), false
