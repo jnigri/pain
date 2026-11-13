@@ -6,9 +6,12 @@ description = "Download Go module dependencies"
 run = "go mod download"
 
 [tasks.build]
-description = "Build pain and install it into $GOBIN"
+description = "Build pain and install it into $GOBIN and ~/go/bin"
 alias = "install"
-run = "go install ."
+run = [
+  "go install .",
+  "GOBIN=\"$HOME/go/bin\" go install .",
+]
 
 [tasks.tour]
 description = "Run pain on the bundled tour"
