@@ -24,7 +24,8 @@ var modelChoices = []struct{ id, name string }{
 type picker struct {
 	ids     []string
 	sel     int
-	thenAsk bool // open the question view once a model is chosen
+	thenAsk bool   // chosen on the way to asking Claude
+	then    func() // what to carry on with once a model is chosen
 }
 
 func newPicker(current string, thenAsk bool) *picker {
@@ -69,8 +70,8 @@ func (m *Model) updatePicker(key string) {
 		m.prefs.Model = p.ids[p.sel]
 		m.prefErr = m.prefs.Save()
 		m.pick = nil
-		if p.thenAsk {
-			m.openAsk()
+		if p.then != nil {
+			p.then()
 		}
 	}
 }
@@ -78,7 +79,7 @@ func (m *Model) updatePicker(key string) {
 func (m *Model) pickerView() string {
 	p := m.pick
 	title := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).Render("model")
-	lines := []string{title, theme.Fg(theme.Subtext0).Render("used to answer your questions"), ""}
+	lines := []string{title, theme.Fg(theme.Subtext0).Render("answers your questions and writes the checkpoints"), ""}
 	for i, id := range p.ids {
 		mark := "  "
 		name := theme.Fg(theme.Subtext1).Render(modelName(id))

@@ -1,10 +1,14 @@
 package reader
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"pain/internal/markdown"
+	"pain/internal/store"
 )
 
 func TestSplitSections(t *testing.T) {
@@ -57,5 +61,81 @@ func TestParseQuiz(t *testing.T) {
 	}
 	if _, err := parseQuiz(`{"sections":[{"questions":[]}]}`, 1); err == nil {
 		t.Error("no error without questions")
+	}
+}
+
+func TestScopes(t *testing.T) {
+	// New saves the position, which must not land in the real cache.
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	words := func(n int) string { return strings.Repeat("word ", n) + "\n\n" }
+	src := []byte("# Title\n\nOne two. Three four.\n\n" + words(300) + "## Two\n\n" + words(300))
+	m := New("/x.md", src, markdown.Parse(src), 0, store.Prefs{SkipPunct: true})
+	if len(m.secs) != 2 {
+		t.Fatalf("%d sections, want 2", len(m.secs))
+	}
+
+	// The heading is one sentence: tab goes straight to the section and back.
+	m.widen(1)
+	if m.sel != scopeSection {
+		t.Errorf("tab on a one-sentence block selects %v, want the section", scopeNames[m.sel])
+	}
+	m.widen(1)
+	if m.sel != scopeSentence {
+		t.Errorf("tab on the section selects %v, want the sentence", scopeNames[m.sel])
+	}
+
+	// A block of two sentences goes through all three, both ways.
+	m.next()
+	for _, want := range []scope{scopeBlock, scopeSection, scopeSentence} {
+		if m.widen(1); m.sel != want {
+			t.Errorf("tab selects %v, want %v", scopeNames[m.sel], scopeNames[want])
+		}
+	}
+	if m.widen(-1); m.sel != scopeSection {
+		t.Errorf("shift+tab selects %v, want the section", scopeNames[m.sel])
+	}
+
+	if got := m.toCheckpoint(); got != 304 {
+		t.Errorf("toCheckpoint = %d, want 304", got)
+	}
+	first := m.cur
+	m.nextSection()
+	if sectionOf(m.secs, m.cur) != 1 || m.units[m.cur].Kind != markdown.Heading {
+		t.Errorf("nextSection stops at unit %d", m.cur)
+	}
+	m.prevSection()
+	if m.cur != 0 {
+		t.Errorf("prevSection from a section start goes to unit %d, want 0", m.cur)
+	}
+	m.cur = first + 2
+	m.prevSection()
+	if m.cur != 0 {
+		t.Errorf("prevSection inside a section goes to unit %d, want its start", m.cur)
+	}
+	m.nextSection()
+	m.nextSection()
+	if !m.Finished {
+		t.Error("nextSection on the last section does not finish the file")
+	}
+
+	// The checkpoint mark sits under the last block that shows something.
+	if last := m.secs[0].last(m.units); m.units[last].Kind != markdown.Para || last >= m.secs[0].end {
+		t.Errorf("last of the first section is unit %d", last)
+	}
+}
+
+func TestWrapHints(t *testing.T) {
+	hs := []string{"aaaa", "bbbb", "cccc", "dddd"}
+	for w, want := range map[int]int{30: 1, 20: 2, 12: 2, 6: 4} {
+		lines := wrapHints(w, slices.Clone(hs))
+		if len(lines) != want {
+			t.Errorf("wrapHints(%d) = %d lines, want %d: %q", w, len(lines), want, lines)
+		}
+		for _, l := range lines {
+			if lipgloss.Width(l) > max(w, 4) {
+				t.Errorf("wrapHints(%d): line %q is too wide", w, l)
+			}
+		}
 	}
 }

@@ -14,6 +14,7 @@ type AskEntry struct {
 	Unit      int       `json:"unit"`
 	Block     string    `json:"block"`
 	Selection string    `json:"selection,omitempty"` // the sentence asked about, empty for the whole block
+	Section   bool      `json:"section,omitempty"`   // asked about the whole section the block sits in
 	Turns     []AskTurn `json:"turns"`
 	Time      time.Time `json:"time"`
 

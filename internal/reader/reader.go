@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 
 	"pain/internal/markdown"
 	"pain/internal/store"
@@ -22,6 +23,24 @@ const maxWidth = 88
 // maxKeyGap caps the time counted between two keys, so a pause does not
 // count as reading time.
 const maxKeyGap = 10 * time.Second
+
+// burstWords is the run of words the top typing speed is measured over.
+const burstWords = 20
+
+// maxWPM is the fastest run still counted as typing.
+const maxWPM = 300
+
+// scope is what the underline covers, and so what ctrl+l and ctrl+h move by
+// and what ctrl+a and ctrl+e are about. Tab widens it.
+type scope int
+
+const (
+	scopeSentence scope = iota
+	scopeBlock
+	scopeSection
+)
+
+var scopeNames = [...]string{"sentence", "block", "section"}
 
 type cached struct {
 	done  bool
@@ -41,22 +60,25 @@ type Model struct {
 	prefs    store.Prefs
 	showPref bool
 	showKeys bool
-	// wholeBlock makes the underline, ctrl+h/l and ctrl+a work on the whole
-	// block rather than the sentence. Tab switches it.
-	wholeBlock bool
-	prefSel    int
-	prefErr    error
-	pick       *picker // model choice, over everything else while open
-	ask        *askState
-	asked      map[int]bool // units with a conversation
-	scroll     int          // lines the view is moved down from the cursor, up when negative
+	sel      scope
+	secs     []section // the file cut into sections, for the section scope and checkpoints
+	prefSel  int
+	prefErr  error
+	pick     *picker // model choice, over everything else while open
+	ask      *askState
+	asked    map[int]bool // units with a conversation
+	scroll   int          // lines the view is moved down from the cursor, up when negative
 	// Folder is set when the file was opened from the folder view: esc goes
 	// back to it, and finishing returns there.
 	Folder bool
-	// Typing speed for this session, saved to stats.json on leaving.
-	lastKey time.Time
-	words   int
-	secs    float64
+	// What was typed and answered this session, saved to stats.json on
+	// leaving. typedSecs is the time spent typing, and wordAt its value at
+	// each word typed, for the top speed.
+	lastKey   time.Time
+	words     int
+	typedSecs float64
+	wordAt    []float64
+	sess      store.Tally // top speed, questions and explanations
 	// Scope is what ctrl+t turns active reading on for: the folder the file
 	// was opened from. Empty, it is the file alone.
 	Scope  string
@@ -78,22 +100,29 @@ func (m *Model) leave() {
 	if !m.Finished {
 		store.SaveProgress(m.Path, m.cur, len(m.units))
 	}
-	store.AddTypingStats(m.words, m.secs)
-	m.words, m.secs = 0, 0
+	store.AddStats(m.Path, m.tally())
+	m.words, m.typedSecs, m.wordAt, m.sess = 0, 0, nil, store.Tally{}
 	m.stopGen()
+}
+
+// tally is this session so far.
+func (m *Model) tally() store.Tally {
+	t := m.sess
+	t.Words, t.Seconds = m.words, m.typedSecs
+	return t
 }
 
 // tick counts the time since the last typing key, up to maxKeyGap.
 func (m *Model) tick() {
 	now := time.Now()
 	if !m.lastKey.IsZero() {
-		m.secs += min(now.Sub(m.lastKey), maxKeyGap).Seconds()
+		m.typedSecs += min(now.Sub(m.lastKey), maxKeyGap).Seconds()
 	}
 	m.lastKey = now
 }
 
 func New(path string, src []byte, units []markdown.Unit, start int, p store.Prefs) *Model {
-	m := &Model{Path: path, src: src, units: units, cache: map[int]cached{}, prefs: p}
+	m := &Model{Path: path, src: src, units: units, cache: map[int]cached{}, prefs: p, secs: splitSections(units)}
 	m.countTotal()
 	m.loadAsked()
 	m.cur = start - 1
@@ -239,27 +268,33 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, closeDoc(false)
 			}
 		case tea.KeyCtrlA:
-			if m.prefs.Model == "" {
-				m.pick = newPicker("", true)
-			} else {
-				m.openAsk()
-			}
+			m.withModel(m.openAsk)
+		case tea.KeyCtrlE:
+			m.withModel(m.openExplain)
+		case tea.KeyCtrlG:
+			return m, m.quizNow()
 		case tea.KeyCtrlT:
 			return m, m.toggleActive()
 		case tea.KeyTab:
-			m.wholeBlock = !m.wholeBlock
+			m.widen(1)
 		case tea.KeyShiftTab:
-			m.prev()
+			m.widen(-1)
 		case tea.KeyCtrlL:
-			if m.wholeBlock {
+			switch m.sel {
+			case scopeSection:
+				m.nextSection()
+			case scopeBlock:
 				m.next()
-			} else {
+			default:
 				m.nextSentence()
 			}
 		case tea.KeyCtrlH:
-			if m.wholeBlock {
+			switch m.sel {
+			case scopeSection:
+				m.prevSection()
+			case scopeBlock:
 				m.prevBlock()
-			} else {
+			default:
 				m.prevSentence()
 			}
 		case tea.KeyCtrlJ:
@@ -320,6 +355,77 @@ func (m *Model) updatePrefs(msg tea.KeyMsg) {
 }
 
 func (m *Model) unit() *markdown.Unit { return &m.units[m.cur] }
+
+// withModel runs f once a model is chosen, asking for one the first time.
+func (m *Model) withModel(f func()) {
+	if m.prefs.Model != "" {
+		f()
+		return
+	}
+	m.pick = newPicker("", true)
+	m.pick.then = f
+}
+
+// widen moves the selection one step wider, or narrower with d = -1, around
+// from the section to the sentence. A block of one sentence has no step
+// between the two.
+func (m *Model) widen(d int) {
+	n := scope((int(m.sel) + d + 3) % 3)
+	if m.curSentence() == "" && (n == scopeBlock && d > 0 || n == scopeSentence && d < 0) {
+		n = scope((int(n) + d + 3) % 3)
+	}
+	m.sel = n
+}
+
+// firstTyping is the first unit to type from unit i on, or -1.
+func (m *Model) firstTyping(i int) int {
+	for ; i < len(m.units); i++ {
+		if m.needsTyping(i) {
+			return i
+		}
+	}
+	return -1
+}
+
+// nextSection skips the rest of the section the cursor is in.
+func (m *Model) nextSection() {
+	m.cur = m.secs[sectionOf(m.secs, m.cur)].end - 1
+	m.next()
+}
+
+// prevSection goes back to the start of the section the cursor is in.
+// Already there, it goes to the start of the section before.
+func (m *Model) prevSection() {
+	s := sectionOf(m.secs, m.cur)
+	first := m.firstTyping(m.secs[s].start)
+	if first == m.cur && !m.typedSince(0) && s > 0 {
+		first = m.firstTyping(m.secs[s-1].start)
+	}
+	if first < 0 {
+		return
+	}
+	m.cur = first
+	m.typed = m.typed[:0]
+	m.autoSkip()
+}
+
+// toCheckpoint is the words left to type before the section ends.
+func (m *Model) toCheckpoint() int {
+	n, in := 0, false
+	for _, c := range m.unit().Cells[len(m.typed):] {
+		w := !c.Skip && markdown.IsAlnum(c.R)
+		if w && !in {
+			n++
+		}
+		in = w
+	}
+	for i := m.cur + 1; i < m.secs[sectionOf(m.secs, m.cur)].end; i++ {
+		if m.needsTyping(i) {
+			n += markdown.Words(&m.units[i])
+		}
+	}
+	return n
+}
 
 // next moves to the following typeable unit, or finishes the document.
 func (m *Model) next() {
@@ -385,6 +491,13 @@ func (m *Model) typeRune(r rune) {
 	m.typed = append(m.typed, r)
 	if markdown.IsAlnum(cs[p].R) && (p == 0 || !markdown.IsAlnum(cs[p-1].R)) {
 		m.words++
+		m.wordAt = append(m.wordAt, m.typedSecs)
+		if n := len(m.wordAt); n > burstWords {
+			// Faster than anyone types is key repeat or a script.
+			if dt := m.typedSecs - m.wordAt[n-1-burstWords]; dt > 0 && burstWords/dt*60 <= maxWPM {
+				m.sess.BestWPM = max(m.sess.BestWPM, burstWords/dt*60)
+			}
+		}
 	}
 	m.autoSkip()
 	if m.complete() {
@@ -621,7 +734,9 @@ func (m *Model) View() string {
 	margin := strings.Repeat(" ", max((m.w-cw)/2, 0))
 	docMargin := margin[min(len(gutter), len(margin)):] // docLines brings the gutter
 	var pane []string
-	bodyH := max(m.h-4, 1)
+	// The footer wraps on a narrow screen, and the text gives it the room.
+	foot := m.footer(cw)
+	bodyH := max(m.h-3-len(foot), 1)
 	if m.ask != nil {
 		pane = m.askPane(cw, max(m.h*45/100, 6))
 		bodyH = max(m.h-3-len(pane), 1) // header, blank and separator
@@ -644,28 +759,67 @@ func (m *Model) View() string {
 		}
 		return sb.String()
 	}
-	esc := "esc quit"
-	if m.Folder {
-		esc = "esc files"
+	for _, l := range foot {
+		sb.WriteString("\n" + margin + l)
 	}
-	help := "tab whole block · ctrl+a ask sentence · " + esc + " · " + view.KeysHint
-	if m.wholeBlock {
-		help = "tab sentence · ctrl+a ask block · " + esc + " · " + view.KeysHint
-	}
-	if m.scroll != 0 {
-		help = "↑/↓ scroll · type or esc to return to the cursor"
-	}
-	if m.notice != "" {
-		help = m.notice
-	}
-	help = theme.Fg(theme.Overlay0).Render(help)
-	sb.WriteString("\n" + margin + help)
 	return sb.String()
+}
+
+// wrapHints lays footer entries out in lines of at most w columns, joined
+// by dots. Entries are already styled, and never cut.
+func wrapHints(w int, hs []string) []string {
+	const sep = " · "
+	var lines []string
+	for _, h := range hs {
+		if n := len(lines); n > 0 && lipgloss.Width(lines[n-1])+lipgloss.Width(sep)+lipgloss.Width(h) <= w {
+			lines[n-1] += theme.Fg(theme.Overlay0).Render(sep) + h
+		} else {
+			lines = append(lines, h)
+		}
+	}
+	return lines
+}
+
+// footer shows the keys that matter where the cursor is, in the width of the
+// text, on as many lines as they need.
+func (m *Model) footer(cw int) []string {
+	dim := theme.Fg(theme.Overlay0)
+	switch {
+	case m.notice != "":
+		return []string{dim.Render(runewidth.Truncate(m.notice, cw, "…"))}
+	case m.scroll != 0:
+		return []string{dim.Render(runewidth.Truncate("↑/↓ scroll · type or esc to return to the cursor", cw, "…"))}
+	}
+	// The selection comes first, the scope the underline covers standing out.
+	names := make([]string, len(scopeNames))
+	for i, n := range scopeNames {
+		st := dim
+		if scope(i) == m.sel {
+			st = theme.Fg(theme.Subtext1).Underline(true)
+		}
+		names[i] = st.Render(n)
+	}
+	hs := []string{dim.Render("tab ") + strings.Join(names, " ")}
+	rest := []string{"ctrl+l skip " + scopeNames[m.sel], "ctrl+a ask", "ctrl+e explain"}
+	if m.check != nil {
+		rest = append(rest, "ctrl+g quiz")
+	} else {
+		rest = append(rest, "ctrl+t active reading")
+	}
+	if m.Folder {
+		rest = append(rest, "esc files")
+	} else {
+		rest = append(rest, "esc quit")
+	}
+	for _, h := range append(rest, view.KeysHint) {
+		hs = append(hs, dim.Render(h))
+	}
+	return wrapHints(cw, hs)
 }
 
 // docLines is the document around the cursor, exactly bodyH lines tall.
 func (m *Model) docLines(cw, bodyH int) []string {
-	cur, curLine := view.RenderUnit(m.unit(), cw, &view.Cursor{Typed: m.typed, CaseSensitive: m.prefs.CaseSensitive, WholeBlock: m.wholeBlock}, false)
+	cur, curLine := view.RenderUnit(m.unit(), cw, &view.Cursor{Typed: m.typed, CaseSensitive: m.prefs.CaseSensitive, WholeBlock: m.sel != scopeSentence}, false)
 	cur = m.withGutter(m.cur, cur)
 
 	// Keep the cursor about a third of the way down the screen, then move the
@@ -699,16 +853,25 @@ func (m *Model) docLines(cw, bodyH int) []string {
 }
 
 // gutter is the space left of the text where a dot marks blocks that have a
-// conversation.
+// conversation, and a bar the section when it is the selection.
 const gutter = "  "
 
 func (m *Model) withGutter(i int, lines []string) []string {
+	g := gutter
+	s := sectionOf(m.secs, i)
+	if m.sel == scopeSection && s == sectionOf(m.secs, m.cur) {
+		g = theme.Fg(theme.Yellow).Render("▏") + " "
+	}
 	out := make([]string, len(lines))
 	for k, l := range lines {
-		out[k] = gutter + l
+		out[k] = g + l
 	}
 	if m.asked[i] && len(out) > 0 {
 		out[0] = theme.Fg(theme.Purple).Render("●") + " " + lines[0]
+	}
+	// The checkpoint of a section shows under its last block.
+	if m.check != nil && i == m.secs[s].last(m.units) {
+		out = append(out, "", gutter+m.checkMark(s))
 	}
 	return out
 }
@@ -731,7 +894,17 @@ func (m *Model) header(cw int) string {
 	right := bar + theme.Fg(theme.Subtext0).Render(fmt.Sprintf(" %3d%%", pct))
 	left := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).Render(filepath.Base(m.Path))
 	if m.check != nil {
-		left += theme.Fg(theme.Green).Render("  ◆ active")
+		// The section the cursor is in. The checkpoint is only announced
+		// once it is close.
+		at := fmt.Sprintf("  ◆ %d/%d", sectionOf(m.secs, m.cur)+1, len(m.secs))
+		more := theme.Fg(theme.Green).Render(at)
+		if n := m.toCheckpoint(); n <= nearCheckpoint {
+			soon := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Yellow)).Bold(true).Render(fmt.Sprintf("%s · checkpoint in %d", at, n))
+			if lipgloss.Width(left)+lipgloss.Width(soon)+lipgloss.Width(right) < cw {
+				more = soon
+			}
+		}
+		left += more
 	}
 	gap := max(cw-lipgloss.Width(left)-lipgloss.Width(right), 1)
 	return left + strings.Repeat(" ", gap) + right
@@ -741,6 +914,28 @@ func (m *Model) finishView() string {
 	title := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Green)).Bold(true).Render("✔ done")
 	name := theme.Fg(theme.Subtext1).Render(filepath.Base(m.Path))
 	help := theme.Fg(theme.Overlay2).Render("r restart · q quit")
-	box := lipgloss.JoinVertical(lipgloss.Center, title, "", name, "", help)
+	rows := []string{title, "", name, ""}
+	if s := sessionLine(m.tally()); s != "" {
+		rows = append(rows, theme.Fg(theme.Subtext0).Render(s), "")
+	}
+	box := lipgloss.JoinVertical(lipgloss.Center, append(rows, help)...)
 	return lipgloss.Place(m.w, m.h, lipgloss.Center, lipgloss.Center, box)
+}
+
+// sessionLine sums a session up in one line, or "" when nothing was typed.
+func sessionLine(t store.Tally) string {
+	var parts []string
+	if t.Words > 0 {
+		parts = append(parts, fmt.Sprintf("%d words typed", t.Words))
+	}
+	if w := t.WPM(); w > 0 {
+		parts = append(parts, fmt.Sprintf("%.0f wpm", w))
+	}
+	if t.BestWPM > 0 {
+		parts = append(parts, fmt.Sprintf("top %.0f", t.BestWPM))
+	}
+	if t.Answered > 0 {
+		parts = append(parts, fmt.Sprintf("%d of %d questions right", t.Right, t.Answered))
+	}
+	return strings.Join(parts, " · ")
 }

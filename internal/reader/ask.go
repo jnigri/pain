@@ -36,8 +36,8 @@ var claudeArgs = []string{
 	"--include-partial-messages", "--tools", "", "--no-session-persistence",
 }
 
-const askPrompt = `You help someone who is reading a Markdown file in a terminal. They ask questions about one block of the file, or about one sentence of it when a selection is given. The file's path, the section the block sits in and the whole file are given for context, and earlier turns of the conversation come before the latest question.
-Answer in Markdown, concisely: a few short paragraphs or a short list. Do not repeat the block back.`
+const askPrompt = `You help someone who is reading a Markdown file in a terminal. They ask questions about one part of the file: a block, one sentence of it when a selection is given, or a whole section. The file's path, the headings the part sits under and the whole file are given for context, and earlier turns of the conversation come before the latest question.
+Answer in Markdown, concisely: a few short paragraphs or a short list. Do not repeat the part back.`
 
 type askMode int
 
@@ -74,10 +74,13 @@ type askState struct {
 	ch       chan tea.Msg
 	hist     []store.AskEntry // newest first
 	sel      int
-	// review makes this a checkpoint: the reader explains section sec in
-	// their own words and Claude checks it. Nothing of it is saved.
-	review bool
-	sec    int
+	// review makes this an explanation: the reader writes what revText says
+	// in their own words and Claude checks it. Nothing of it is saved. sec is
+	// the section whose checkpoint this is, or -1 when it was asked for.
+	review   bool
+	sec      int
+	revTitle string
+	revText  string
 }
 
 type askDeltaMsg struct {
@@ -140,42 +143,69 @@ func (m *Model) curSentence() string {
 }
 
 // openAsk asks about what the underline shows: the sentence the cursor is in,
-// or the whole block. It reopens the latest conversation about it, if any.
+// the whole block or the section. It reopens the latest conversation about
+// it, if any.
 func (m *Model) openAsk() {
 	sent := m.curSentence()
-	sel := sent
-	if m.wholeBlock {
-		sel = ""
+	e := store.AskEntry{Unit: m.cur, Block: blockText(m.unit())}
+	switch m.sel {
+	case scopeSentence:
+		e.Selection = sent
+	case scopeSection:
+		e.Section = true
 	}
+	sec := sectionOf(m.secs, m.cur)
 	all := store.ReadAsks()[m.Path]
 	for i := len(all) - 1; i >= 0; i-- {
-		e := all[i]
-		if m.askedUnit(e) == m.cur && e.Selection == sel {
-			e.Unit = m.cur
-			m.ask = &askState{entry: e, sentence: sent, mode: askAnswer, anchor: len(e.Turns), input: newInput()}
+		o := all[i]
+		u := m.askedUnit(o)
+		if u < 0 || o.Section != e.Section || o.Selection != e.Selection {
+			continue
+		}
+		if u == m.cur || (o.Section && sectionOf(m.secs, u) == sec) {
+			o.Unit = u
+			m.ask = &askState{entry: o, sentence: sent, mode: askAnswer, anchor: len(o.Turns), input: newInput()}
 			return
 		}
 	}
-	e := store.AskEntry{Unit: m.cur, Block: blockText(m.unit()), Selection: sel}
 	m.ask = &askState{entry: e, sentence: sent, follow: true, input: newInput()}
 }
 
-// canWiden tells whether a new conversation can switch between the sentence
-// and the whole block.
+// canWiden tells whether tab can still change what a conversation is about.
 func (a *askState) canWiden() bool {
-	return len(a.entry.Turns) == 0 && a.sentence != ""
+	return len(a.entry.Turns) == 0 && !a.review
 }
 
-// toggleScope switches a new conversation between the sentence and the block.
-func (a *askState) toggleScope() {
-	if !a.canWiden() {
-		return
+// scope is what the conversation is about.
+func (a *askState) scope() scope {
+	switch {
+	case a.entry.Section:
+		return scopeSection
+	case a.entry.Selection != "":
+		return scopeSentence
 	}
-	if a.entry.Selection == "" {
-		a.entry.Selection = a.sentence
-	} else {
+	return scopeBlock
+}
+
+// widen moves a new conversation from the sentence to the block, to the
+// section, and around.
+func (a *askState) widen() {
+	switch a.scope() {
+	case scopeSentence:
 		a.entry.Selection = ""
+	case scopeBlock:
+		a.entry.Section = true
+	default:
+		a.entry.Section, a.entry.Selection = false, a.sentence
 	}
+}
+
+// askTitle names the section a conversation is about.
+func (m *Model) askTitle(e store.AskEntry) string {
+	if i := m.askedUnit(e); i >= 0 {
+		return "§ " + m.secs[sectionOf(m.secs, i)].title
+	}
+	return "§ " + e.Block
 }
 
 // section is the chain of headings unit i sits under, such as "Usage > Keys".
@@ -449,15 +479,22 @@ func (m *Model) send() tea.Cmd {
 	}
 	var system strings.Builder
 	if a.review {
-		system.WriteString(m.reviewSystem(a.sec))
+		system.WriteString(m.reviewSystem(a))
 	} else {
 		fmt.Fprintf(&system, "%s\n\nFile: %s\n", askPrompt, m.Path)
-		if i := m.askedUnit(a.entry); i >= 0 {
+		i := m.askedUnit(a.entry)
+		if i >= 0 {
 			if s := m.section(i); s != "" {
 				fmt.Fprintf(&system, "Section: %s\n", s)
 			}
 		}
-		fmt.Fprintf(&system, "\n<file>\n%s\n</file>\n\n<block>\n%s\n</block>", m.src, a.entry.Block)
+		fmt.Fprintf(&system, "\n<file>\n%s\n</file>\n\n", m.src)
+		if a.entry.Section && i >= 0 {
+			fmt.Fprintf(&system, "The question is about this whole section of the file:\n<section>\n%s\n</section>",
+				sectionText(m.units, m.secs[sectionOf(m.secs, i)]))
+		} else {
+			fmt.Fprintf(&system, "<block>\n%s\n</block>", a.entry.Block)
+		}
 		if a.entry.Selection != "" {
 			fmt.Fprintf(&system, "\n\nThe question is about this sentence of the block:\n<selection>\n%s\n</selection>", a.entry.Selection)
 		}
@@ -522,6 +559,12 @@ func (m *Model) askEvent(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		a.cancel()
+		if a.review && len(a.entry.Turns) == 0 {
+			m.sess.Explained++
+			if m.check != nil && a.sec >= 0 {
+				m.check.explained[a.sec] = true
+			}
+		}
 		// Show the new answer from its start rather than its end.
 		a.ch, a.mode, a.follow = nil, askAnswer, false
 		a.anchor = len(a.entry.Turns) + 1
@@ -588,17 +631,19 @@ func (m *Model) updateAsk(msg tea.KeyMsg) tea.Cmd {
 		case tea.KeyTab:
 			// On a checkpoint not answered yet, tab goes to the questions.
 			if a.review {
-				if len(a.entry.Turns) == 0 {
+				if len(a.entry.Turns) == 0 && a.sec >= 0 && m.check != nil {
 					m.ask = nil
 					m.setExplain(false)
 					return m.openQuiz(a.sec)
 				}
 				break
 			}
-			// Same switch as tab on the text, which follows it.
+			// Same step as tab on the text, which follows it.
 			if a.canWiden() {
-				a.toggleScope()
-				m.wholeBlock = a.entry.Selection == ""
+				a.widen()
+				if a.entry.Unit == m.cur {
+					m.sel = a.scope()
+				}
 			}
 		case tea.KeyCtrlV:
 			if p, err := clipboardImage(); err != nil {
@@ -644,7 +689,7 @@ func (m *Model) updateAsk(msg tea.KeyMsg) tea.Cmd {
 			if a.review {
 				break
 			}
-			a.entry = store.AskEntry{Unit: a.entry.Unit, Block: a.entry.Block, Selection: a.entry.Selection}
+			a.entry = store.AskEntry{Unit: a.entry.Unit, Block: a.entry.Block, Selection: a.entry.Selection, Section: a.entry.Section}
 			a.mode, a.scroll, a.follow = askInput, 0, true
 			a.input.Reset()
 		case "k":

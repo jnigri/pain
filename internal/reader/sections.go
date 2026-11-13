@@ -28,6 +28,17 @@ func cellText(cs []markdown.Cell) string {
 	return string(rs)
 }
 
+// last is the last unit of the section that shows something, where its
+// checkpoint is drawn.
+func (s section) last(units []markdown.Unit) int {
+	for i := s.end - 1; i > s.start; i-- {
+		if k := units[i].Kind; k != markdown.Spacer && k != markdown.Rule {
+			return i
+		}
+	}
+	return s.start
+}
+
 // splitSections cuts a file into the sections checkpoints are about.
 func splitSections(units []markdown.Unit) []section {
 	words := make([]int, len(units))

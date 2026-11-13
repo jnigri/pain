@@ -8,7 +8,7 @@
 
 `pain` is a terminal app that shows a Markdown file and makes you retype it,
 one block at a time, in the spirit of [monkeytype](https://monkeytype.com).
-There is no score and no timer. Typing keeps you active, so you take in what is
+There is no timer and nothing to win. Typing keeps you active, so you take in what is
 on the page instead of skimming it.
 
 <p align="center">
@@ -27,10 +27,13 @@ type it.
 - **Forgiving typing.** Punctuation fills itself in, case does not matter, and
   `é` accepts `e`. You can skip a sentence, a line or a block.
 - **Folders.** `pain DIR` lists your files with how much of each you have
-  read, and about how long the rest takes at your speed.
+  read, how its questions went, and about how long the rest takes at your
+  speed. `s` shows what you typed and how fast.
 - **Resume.** pain remembers where you stopped in every file.
-- **Ask Claude.** `ctrl+a` asks a question about the sentence or block you are
-  on, and keeps the conversation next to it.
+- **Ask Claude.** `ctrl+a` asks a question about the sentence, block or
+  section you are on, and keeps the conversation next to it.
+- **Explain.** `ctrl+e` lets you say what you just read in your own words.
+  Claude tells you whether you got it, and you can talk it over.
 - **Active reading.** Each section ends with a checkpoint that tests what you
   just read.
 
@@ -52,9 +55,10 @@ pain .           # browse a folder
 
 | Key       | Action                                        |
 |-----------|-----------------------------------------------|
-| `ctrl+l`  | skip the sentence (`ctrl+h` goes back)        |
-| `tab`     | work on the whole block instead of a sentence |
-| `ctrl+a`  | ask Claude about the sentence or block        |
+| `tab`     | widen the selection: sentence, block, section |
+| `ctrl+l`  | skip the selection (`ctrl+h` goes back)       |
+| `ctrl+a`  | ask Claude about the selection                |
+| `ctrl+e`  | explain the selection in your own words       |
 | `ctrl+t`  | turn active reading on or off                 |
 | `ctrl+p`  | preferences                                   |
 | `ctrl+/`  | list every key                                |
@@ -64,17 +68,20 @@ pain .           # browse a folder
 
 Press `ctrl+t` in a file, or `t` in the folder view, and pain remembers that
 this folder wants more from you. From then on, each section ends with a
-checkpoint, in one of two kinds:
+checkpoint. A line in the text shows where it comes, and the header counts down
+the last words before it. A checkpoint is one of two kinds:
 
 - **Questions.** Claude writes a few multiple-choice questions per section the
   first time you open a file. You answer them and see why the right choice is
-  right.
+  right. On the score, `r` answers them again and `ctrl+r` has new ones
+  written. The score shows in the text and in the folder view.
 - **Explain.** You write what the section says in your own words. Claude tells
-  you whether you got it, without nitpicking, and you can discuss it from
-  there.
+  you whether you got it, without nitpicking, or asks a question that leads
+  you to what you missed.
 
-`tab` switches between the two, and `esc` skips a checkpoint. A short file is
-one section; a longer one is cut at its headings.
+`ctrl+e` in the questions, or `tab` in the explanation, switches between the
+two, and `esc` skips a checkpoint. A short file is one section; a longer one is
+cut at its headings.
 
 ## Claude
 

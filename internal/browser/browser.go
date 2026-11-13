@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -34,6 +35,9 @@ type Node struct {
 	// their children.
 	read, total int
 	done, files int
+	// How the checkpoint questions went, the last time each section was
+	// answered.
+	score store.Score
 }
 
 // Scan reads the Markdown files under path. Hidden entries and folders
@@ -70,8 +74,9 @@ func Scan(path string, parent *Node) (*Node, error) {
 }
 
 // refresh recounts what is read from the saved positions.
-func (n *Node) refresh(all map[string]store.Position) {
+func (n *Node) refresh(all map[string]store.Position, scores map[string]store.FileScores) {
 	if !n.dir {
+		n.score = scores[n.Path].Sum()
 		n.pos, n.hasPos = all[n.Path]
 		n.read, n.total = n.stats.read(n.pos, n.hasPos), n.stats.total()
 		n.done, n.files = 0, 1
@@ -80,9 +85,11 @@ func (n *Node) refresh(all map[string]store.Position) {
 		}
 		return
 	}
-	n.read, n.total, n.done, n.files = 0, 0, 0, 0
+	n.read, n.total, n.done, n.files, n.score = 0, 0, 0, 0, store.Score{}
 	for _, k := range n.kids {
-		k.refresh(all)
+		k.refresh(all, scores)
+		n.score.Right += k.score.Right
+		n.score.Total += k.score.Total
 		n.read += k.read
 		n.total += k.total
 		n.done += k.done
@@ -131,6 +138,7 @@ type Model struct {
 	speed    store.TypingStats
 	W, H     int
 	showKeys bool
+	showStat bool
 	active   bool // the folder is read actively: checkpoints end each section
 }
 
@@ -146,7 +154,7 @@ func New(root *Node, last string) *Model {
 }
 
 func (b *Model) Refresh() {
-	b.Root.refresh(store.ReadProgress())
+	b.Root.refresh(store.ReadProgress(), store.ReadScores())
 	b.speed = store.LoadTypingStats()
 }
 
@@ -200,8 +208,8 @@ func (b *Model) NextUnread(after *Node) *Node {
 
 // Update handles a key and returns the file to open, if any.
 func (b *Model) Update(msg tea.KeyMsg) (open *Node, quit bool) {
-	if b.showKeys {
-		b.showKeys = false
+	if b.showKeys || b.showStat {
+		b.showKeys, b.showStat = false, false
 		return nil, false
 	}
 	n := len(b.dir.kids)
@@ -246,6 +254,8 @@ func (b *Model) Update(msg tea.KeyMsg) (open *Node, quit bool) {
 			}
 			b.Refresh()
 		}
+	case "s":
+		b.showStat = true
 	case "t":
 		p := store.LoadPrefs()
 		p.ToggleActive(b.Root.Path, b.Root.Path)
@@ -264,6 +274,9 @@ func (b *Model) View() string {
 	}
 	if b.showKeys {
 		return view.KeysBox(b.W, b.H, "keys · files", browseKeys)
+	}
+	if b.showStat {
+		return b.statsView()
 	}
 	const margin = 2
 	w := b.W - 2*margin
@@ -332,6 +345,13 @@ func (b *Model) header(w int) string {
 			theme.Fg(theme.Subtext0).Render(fmt.Sprintf(" %3d%%", r.pct())),
 		theme.Fg(theme.Subtext1).Render(fmt.Sprintf("%d/%d files", r.done, r.files)),
 	}
+	if r.score.Total > 0 {
+		parts = append(parts, theme.Fg(scoreColor(r.score)).Render("◆ "+scoreText(r.score)))
+	}
+	// What matters least goes first when the screen is narrow.
+	for len(parts) > 1 && lipgloss.Width(left)+3+lipgloss.Width(strings.Join(parts, "   ")) > w {
+		parts = parts[1:]
+	}
 	if t := b.speed.TimeLeft(r.total - r.read); t != "" {
 		parts = append(parts, theme.Fg(theme.Subtext0).Render(t))
 	}
@@ -341,11 +361,31 @@ func (b *Model) header(w int) string {
 }
 
 func (b *Model) footer(w int) string {
-	help := "l open · h up · n next unread · x mark read · t active reading · q quit · " + view.KeysHint
-	if f := b.Root.Find(b.Last); f != nil {
-		help = fmt.Sprintf("r resume %s (%d%%) · ", f.name, f.pct()) + help
+	// The keys follow the entry selected.
+	var parts []string
+	if f := b.Root.Find(b.Last); f != nil && f.done == 0 && f != b.selected() {
+		parts = append(parts, fmt.Sprintf("r resume %s (%d%%)", f.name, f.pct()))
 	}
-	return theme.Fg(theme.Overlay0).Render(runewidth.Truncate(help, w, "…"))
+	switch s := b.selected(); {
+	case s == nil:
+	case s.dir:
+		parts = append(parts, "l open folder")
+	case s.done > 0:
+		parts = append(parts, "l read again", "x mark unread")
+	case s.read > 0:
+		parts = append(parts, "l carry on", "x mark read")
+	default:
+		parts = append(parts, "l read", "x mark read")
+	}
+	if b.dir.parent != nil {
+		parts = append(parts, "h up")
+	}
+	active := "t active reading"
+	if b.active {
+		active = "t active off"
+	}
+	parts = append(parts, "n next unread", "s stats", active, "q quit", view.KeysHint)
+	return theme.Fg(theme.Overlay0).Render(runewidth.Truncate(strings.Join(parts, " · "), w, "…"))
 }
 
 // listColumn draws the entries of folder dir, with sel highlighted: as the
@@ -377,8 +417,15 @@ func entryRow(n *Node, w int, sel, active bool) string {
 	case n.read > 0:
 		mark, markCol = fmt.Sprintf("%d%%", max(n.pct(), 1)), theme.Yellow
 	}
-	name = runewidth.Truncate(name, max(w-2-runewidth.StringWidth(mark)-1, 1), "…")
-	gap := max(w-2-runewidth.StringWidth(name)-runewidth.StringWidth(mark), 1)
+	// The score of the checkpoint questions sits before the mark, when there
+	// is room for it.
+	score := ""
+	if n.score.Total > 0 && w >= 24 {
+		score = scoreText(n.score) + " "
+	}
+	side := runewidth.StringWidth(score) + runewidth.StringWidth(mark)
+	name = runewidth.Truncate(name, max(w-2-side-1, 1), "…")
+	gap := max(w-2-runewidth.StringWidth(name)-side, 1)
 
 	st := lipgloss.NewStyle()
 	nameSt := st.Foreground(lipgloss.Color(nameCol))
@@ -390,6 +437,7 @@ func entryRow(n *Node, w int, sel, active bool) string {
 		nameSt = nameSt.Bold(true).Foreground(lipgloss.Color(theme.Purple))
 	}
 	return st.Render(" ") + nameSt.Render(name) + st.Render(strings.Repeat(" ", gap)) +
+		st.Foreground(lipgloss.Color(scoreColor(n.score))).Render(score) +
 		st.Foreground(lipgloss.Color(markCol)).Render(mark) + st.Render(" ")
 }
 
@@ -407,6 +455,9 @@ func (b *Model) preview(n *Node, w, h int) []string {
 		status = fmt.Sprintf("%s words · ✓ read", thousands(n.total))
 	case n.read > 0:
 		status = fmt.Sprintf("%s / %s words · %d%%", thousands(n.read), thousands(n.total), n.pct())
+	}
+	if n.score.Total > 0 {
+		status += " · questions " + scoreText(n.score)
 	}
 	lines := []string{theme.Fg(theme.Subtext0).Render(status), ""}
 	at := 0
@@ -431,6 +482,71 @@ func padColumn(lines []string, h int) []string {
 	return lines
 }
 
+func scoreText(s store.Score) string { return fmt.Sprintf("%d/%d", s.Right, s.Total) }
+
+// scoreColor is green when every question was answered right.
+func scoreColor(s store.Score) string {
+	if s.Right == s.Total {
+		return theme.Green
+	}
+	return theme.Teal
+}
+
+// statsView compares what was typed and answered in this folder with
+// everything typed in pain.
+func (b *Model) statsView() string {
+	here, all := b.speed.Under(b.Root.Path), b.speed.Tally
+	wpm := func(v float64) string {
+		if v <= 0 {
+			return "–"
+		}
+		return fmt.Sprintf("%.0f wpm", v)
+	}
+	right := func(t store.Tally) string {
+		if t.Answered == 0 {
+			return "–"
+		}
+		return fmt.Sprintf("%d of %d (%d%%)", t.Right, t.Answered, t.Right*100/t.Answered)
+	}
+	clock := func(t store.Tally) string { return store.Clock(time.Duration(t.Seconds * float64(time.Second))) }
+	rows := [][3]string{
+		{"", b.Root.name, "everywhere"},
+		{"words typed", thousands(here.Words), thousands(all.Words)},
+		{"time typing", clock(here), clock(all)},
+		{"average speed", wpm(here.WPM()), wpm(all.WPM())},
+		{"top speed", wpm(here.BestWPM), wpm(all.BestWPM)},
+		{"questions right", right(here), right(all)},
+		{"explanations", fmt.Sprint(here.Explained), fmt.Sprint(all.Explained)},
+	}
+	if b.Root.score.Total > 0 {
+		rows = append(rows, [3]string{"latest scores", scoreText(b.Root.score), ""})
+	}
+	var ws [3]int
+	for _, r := range rows {
+		for i, c := range r {
+			ws[i] = max(ws[i], runewidth.StringWidth(c))
+		}
+	}
+	lines := []string{lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).Render("stats"), ""}
+	for k, r := range rows {
+		st := theme.Fg(theme.Foreground)
+		if k == 0 {
+			st = theme.Fg(theme.Subtext0)
+		}
+		l := theme.Fg(theme.Subtext1).Render(r[0]) + strings.Repeat(" ", ws[0]-runewidth.StringWidth(r[0]))
+		for i := 1; i < 3; i++ {
+			l += strings.Repeat(" ", 3+ws[i]-runewidth.StringWidth(r[i])) + st.Render(r[i])
+		}
+		lines = append(lines, l)
+	}
+	lines = append(lines, "", theme.Fg(theme.Overlay2).Render("Top speed is the fastest run of 20 words. Questions count every try."),
+		"", theme.Fg(theme.Overlay0).Render("any key to close"))
+	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(theme.Overlay0)).Padding(1, 3).
+		Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
+	return lipgloss.Place(b.W, b.H, lipgloss.Center, lipgloss.Center, box)
+}
+
 func thousands(n int) string {
 	s := fmt.Sprint(n)
 	for i := len(s) - 3; i > 0; i -= 3 {
@@ -447,6 +563,7 @@ var browseKeys = []view.KeyRow{
 	{Key: "n", Action: "select the next file not read yet"},
 	{Key: "r", Action: "reopen the last file you read"},
 	{Key: "x", Action: "mark the file read, or unread"},
+	{Key: "s", Action: "stats: words typed, speed and questions, here and everywhere"},
 	{Key: "t", Action: "active reading on or off: a checkpoint ends each section"},
 	{Key: "q / esc / ctrl+c", Action: "quit"},
 }

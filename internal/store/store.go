@@ -1,5 +1,5 @@
 // Package store keeps pain's state between runs: JSON files in the user cache
-// directory (progress.json, folders.json, stats.json, asks.json) and the
+// directory (progress.json, stats.json, asks.json, quizzes.json…) and the
 // preferences in the config directory (see PrefsPath).
 package store
 

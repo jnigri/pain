@@ -16,8 +16,11 @@ func (m *Model) askView() string {
 	cw := m.contentWidth()
 	margin := strings.Repeat(" ", max((m.w-cw)/2, 0))
 	label := "ask"
-	if m.ask.review {
-		label = "checkpoint"
+	switch {
+	case m.ask.review && m.ask.sec >= 0:
+		label = "checkpoint · explain"
+	case m.ask.review:
+		label = "explain"
 	}
 	title := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).Render(label)
 	name := theme.Fg(theme.Subtext0).Render(filepath.Base(m.Path))
@@ -36,8 +39,9 @@ func (m *Model) askView() string {
 // rule is a horizontal line with a label in the middle.
 func rule(w int, label string) string {
 	label = " " + label + " "
-	side := max(w-len(label), 2) / 2
-	return strings.Repeat("─", side) + label + strings.Repeat("─", max(w-side-len(label), 1))
+	lw := lipgloss.Width(label)
+	side := max(w-lw, 2) / 2
+	return strings.Repeat("─", side) + label + strings.Repeat("─", max(w-side-lw, 1))
 }
 
 // textLines renders plain text wrapped to w, through the normal unit drawing.
@@ -76,8 +80,16 @@ func (m *Model) askPane(cw, h int) []string {
 	}
 	switch {
 	case a.review:
-		top = wrapped(theme.Fg(theme.Subtext0), m.check.secs[a.sec].title, cw, "")
-		top = append(top, "", theme.Fg(theme.Subtext1).Render("Explain this section in your own words, without looking back."))
+		top = wrapped(theme.Fg(theme.Subtext0), a.revTitle, cw, "")
+		// What to do shows until the first explanation is sent.
+		if len(a.entry.Turns) == 0 && a.mode == askInput {
+			top = append(top, "", lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Foreground)).Bold(true).
+				Render("Explain it in your own words, from memory."))
+			top = append(top, wrapped(theme.Fg(theme.Overlay2),
+				"A few sentences are enough. Claude says whether you got it or what you missed, and you can talk it over.", cw, "")...)
+		}
+	case a.entry.Section:
+		top = textLines(m.askTitle(a.entry), cw, "", 1)
 	case sel != nil:
 		u := m.units[i]
 		u.Quote++
@@ -156,10 +168,15 @@ func (m *Model) askPane(cw, h int) []string {
 	switch a.mode {
 	case askInput:
 		help = "enter send · esc back"
-		if a.canWiden() && a.entry.Selection != "" {
-			help = "enter send · tab whole block · esc back"
-		} else if a.canWiden() {
-			help = "enter send · tab sentence only · esc back"
+		if a.canWiden() {
+			to := "the whole block"
+			switch {
+			case a.scope() == scopeBlock:
+				to = "the section"
+			case a.scope() == scopeSection && a.sentence != "":
+				to = "the sentence only"
+			}
+			help = "enter send · tab ask about " + to + " · esc back"
 		}
 	case askStream:
 		help = "esc cancel"
@@ -169,11 +186,13 @@ func (m *Model) askPane(cw, h int) []string {
 	if a.review {
 		switch {
 		case a.mode == askAnswer:
-			help = "enter reply · esc carry on"
-		case a.mode == askInput && len(a.entry.Turns) == 0:
-			help = "enter send · tab questions instead · esc skip"
-		case a.mode == askInput:
+			help = "enter reply or try again · esc carry on reading"
+		case a.mode == askInput && len(a.entry.Turns) > 0:
 			help = "enter send · esc back"
+		case a.sec >= 0:
+			help = "enter send · tab questions instead · esc skip"
+		default:
+			help = "enter send · esc cancel"
 		}
 	}
 	help += " · " + view.KeysHint
@@ -203,7 +222,10 @@ func (m *Model) historyPane(cw, h int) []string {
 	for i := first; i < len(a.hist) && i < first+listH; i++ {
 		e := a.hist[i]
 		about := e.Block
-		if e.Selection != "" {
+		switch {
+		case e.Section:
+			about = m.askTitle(e)
+		case e.Selection != "":
 			about = e.Selection
 		}
 		block := []rune(strings.Join(strings.Fields(about), " "))

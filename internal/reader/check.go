@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -33,25 +34,39 @@ Reply with JSON only, one entry per section, in order:
 {"sections":[{"questions":[{"q":"...","choices":["...","...","..."],"answer":0,"why":"..."}]}]}
 "answer" is the index of the correct choice, counting from 0.`
 
-const reviewPrompt = `You check that someone reading a Markdown file understood the section they just finished. They explain the section in their own words, from memory, and you tell them whether they got it.
+const regenPrompt = `The reader already answered the questions below about this section and asked for new ones. Write different questions, about other points of the section or from another angle.`
 
-Judge the substance only. If they have the main ideas right, say so in one short sentence, such as "You got it.", and stop: no summary, no praise, no extra detail. Do not nitpick wording, loose phrasing or minor points they left out. Only when something important is wrong or missing, say what, in a few sentences at most, so they can fix their understanding.
+const reviewPrompt = `You are a friendly study partner for someone reading a Markdown file. They just read one part of it, and they explain that part in their own words, from memory, to check that they understood it. The part can be a whole section, one block or a single sentence: expect an explanation of matching depth, and for a section they may not have read to its end, judge only what is in the part given.
 
-If they then ask questions or try again, answer concisely. Answer in Markdown, in the language they write in.`
+Judge the substance only, and be generous. Loose wording, another order, their own examples and minor points left out are all fine. Do not nitpick.
+
+- If they have the main ideas right, say so in one short sentence, such as "Yes, you got it.", and stop. No summary, no added detail, no list of what they could have said.
+- If an important idea is missing, say in a few words that the rest is right, then point at the gap. Prefer one short question that leads them to it, such as "What happens when ...?", over giving the answer away. When the gap is a plain fact they cannot work out, just say it: "You missed that ...".
+- If something is wrong, say which part, and give a hint or ask one question that helps them see why.
+
+Keep it to a few sentences, and never ask more than one question at a time. When they answer or try again, tell them whether they have it now. If they are still stuck after that, or ask you directly, explain it plainly. They can also simply discuss the part: answer their own questions concisely.
+
+Answer in Markdown, in the language they write in.`
+
+// nearCheckpoint is the words left in a section under which the header
+// announces the checkpoint.
+const nearCheckpoint = 25
 
 // checks is the active reading state of a file.
 type checks struct {
-	secs   []section
-	quiz   [][]store.Question // per section, nil until written
-	hash   string             // of the file, to reuse saved questions
-	passed map[int]bool       // sections whose checkpoint was shown
-	err    string             // why the questions could not be written
-	cancel context.CancelFunc
-	ch     chan tea.Msg // set while Claude writes the questions
+	quiz      [][]store.Question // per section, nil until written
+	score     []store.Score      // per section, how its questions went last
+	hash      string             // of the file, to reuse saved questions
+	passed    map[int]bool       // sections whose checkpoint was shown
+	explained map[int]bool       // sections explained this session
+	err       string             // why the questions could not be written
+	cancel    context.CancelFunc
+	ch        chan tea.Msg // set while Claude writes questions
+	regen     int          // the section getting new questions, -1 for the whole file
 }
 
-// quizState is the checkpoint asking questions. It waits while the questions
-// are still being written.
+// quizState is the checkpoint asking questions. qs is nil while the questions
+// are being written.
 type quizState struct {
 	sec    int
 	qs     []store.Question
@@ -67,8 +82,9 @@ func (m *Model) setupChecks() {
 	// The prompt is part of the hash, so questions written by an older
 	// prompt are written again.
 	sum := sha256.Sum256(append([]byte(quizPrompt), m.src...))
-	c := &checks{secs: splitSections(m.units), hash: hex.EncodeToString(sum[:8]), passed: map[int]bool{}}
-	c.quiz = store.LoadQuiz(m.Path, c.hash, len(c.secs))
+	c := &checks{hash: hex.EncodeToString(sum[:8]), passed: map[int]bool{}, explained: map[int]bool{}, regen: -1}
+	c.quiz = store.LoadQuiz(m.Path, c.hash, len(m.secs))
+	c.score = store.LoadScores(m.Path, c.hash, len(m.secs))
 	m.check = c
 }
 
@@ -100,6 +116,11 @@ func (m *Model) toggleActive() tea.Cmd {
 	return m.startGen()
 }
 
+func sectionPrompt(m *Model, i int) string {
+	s := m.secs[i]
+	return fmt.Sprintf("<section number=\"%d\" title=%q>\n%s\n</section>\n\n", i+1, s.title, sectionText(m.units, s))
+}
+
 // startGen asks Claude for the questions of every section, once per file.
 func (m *Model) startGen() tea.Cmd {
 	c := m.check
@@ -107,12 +128,32 @@ func (m *Model) startGen() tea.Cmd {
 		return nil
 	}
 	var prompt strings.Builder
-	for i, s := range c.secs {
-		fmt.Fprintf(&prompt, "<section number=\"%d\" title=%q>\n%s\n</section>\n\n", i+1, s.title, sectionText(m.units, s))
+	for i := range m.secs {
+		prompt.WriteString(sectionPrompt(m, i))
 	}
+	return m.gen(-1, prompt.String())
+}
+
+// startRegen asks Claude for other questions about one section.
+func (m *Model) startRegen(sec int) tea.Cmd {
+	c := m.check
+	if c.quiz == nil || c.ch != nil {
+		return nil
+	}
+	var prompt strings.Builder
+	prompt.WriteString(sectionPrompt(m, sec) + regenPrompt + "\n")
+	for _, q := range c.quiz[sec] {
+		fmt.Fprintf(&prompt, "- %s\n", q.Q)
+	}
+	m.quiz = &quizState{sec: sec, picked: -1}
+	return m.gen(sec, prompt.String())
+}
+
+func (m *Model) gen(regen int, prompt string) tea.Cmd {
+	c := m.check
 	ctx, cancel := context.WithCancel(context.Background())
-	c.err = ""
-	c.cancel, c.ch = cancel, startAsk(ctx, m.prefs.Model, quizPrompt, prompt.String(), nil)
+	c.err, c.regen = "", regen
+	c.cancel, c.ch = cancel, startAsk(ctx, m.prefs.Model, quizPrompt, prompt, nil)
 	return waitAsk(c.ch)
 }
 
@@ -142,13 +183,22 @@ func (m *Model) genEvent(msg tea.Msg) (tea.Cmd, bool) {
 		c.cancel()
 		c.ch = nil
 		err := msg.err
-		if err == nil {
-			c.quiz, err = parseQuiz(msg.answer, len(c.secs))
+		switch {
+		case err != nil:
+		case c.regen < 0:
+			c.quiz, err = parseQuiz(msg.answer, len(m.secs))
+		default:
+			var one [][]store.Question
+			// The score stays until the new questions are answered.
+			if one, err = parseQuiz(msg.answer, 1); err == nil {
+				c.quiz[c.regen] = one[0]
+			}
 		}
 		if err != nil {
-			c.err = err.Error()
+			c.err = err.Error() // regen stays, so trying again asks for the same
 			return nil, true
 		}
+		c.regen = -1
 		store.SaveQuiz(m.Path, c.hash, c.quiz)
 		if q := m.quiz; q != nil {
 			m.quiz = nil
@@ -159,9 +209,16 @@ func (m *Model) genEvent(msg tea.Msg) (tea.Cmd, bool) {
 	return nil, false
 }
 
+// shuffle moves the choices of a question around, keeping track of the right
+// one. Models tend to put it in the same place.
+func shuffle(q *store.Question) {
+	right := q.Choices[q.Answer]
+	rand.Shuffle(len(q.Choices), func(a, b int) { q.Choices[a], q.Choices[b] = q.Choices[b], q.Choices[a] })
+	q.Answer = slices.Index(q.Choices, right)
+}
+
 // parseQuiz reads Claude's questions for n sections. Questions that cannot
-// be asked are dropped, and the choices are shuffled, as models tend to put
-// the right one in the same place.
+// be asked are dropped.
 func parseQuiz(s string, n int) ([][]store.Question, error) {
 	var out struct {
 		Sections []struct {
@@ -179,13 +236,7 @@ func parseQuiz(s string, n int) ([][]store.Question, error) {
 			if q.Q == "" || len(q.Choices) < 2 || len(q.Choices) > 9 || q.Answer < 0 || q.Answer >= len(q.Choices) {
 				continue
 			}
-			right := q.Choices[q.Answer]
-			rand.Shuffle(len(q.Choices), func(a, b int) { q.Choices[a], q.Choices[b] = q.Choices[b], q.Choices[a] })
-			for a, c := range q.Choices {
-				if c == right {
-					q.Answer = a
-				}
-			}
+			shuffle(&q)
 			quiz[k] = append(quiz[k], q)
 			found = true
 		}
@@ -203,8 +254,8 @@ func (m *Model) checkpoint(before int) tea.Cmd {
 	if c == nil || before < 0 || before >= len(m.units) || (!m.Finished && m.cur <= before) {
 		return nil
 	}
-	s := sectionOf(c.secs, before)
-	if c.passed[s] || (!m.Finished && sectionOf(c.secs, m.cur) == s) {
+	s := sectionOf(m.secs, before)
+	if c.passed[s] || (!m.Finished && sectionOf(m.secs, m.cur) == s) {
 		return nil
 	}
 	c.passed[s] = true
@@ -215,28 +266,81 @@ func (m *Model) checkpoint(before int) tea.Cmd {
 	return m.openQuiz(s)
 }
 
+// quizNow opens the questions of the section the cursor is in, before its
+// end or once more.
+func (m *Model) quizNow() tea.Cmd {
+	if m.check == nil {
+		m.notice = "questions need active reading · ctrl+t turns it on"
+		return nil
+	}
+	return m.openQuiz(sectionOf(m.secs, m.cur))
+}
+
 // openQuiz shows the questions of a section. A section Claude wrote none for
 // is explained instead.
 func (m *Model) openQuiz(sec int) tea.Cmd {
 	c := m.check
-	if c.quiz != nil && len(c.quiz[sec]) == 0 {
+	writing := c.ch != nil && c.regen == sec
+	if c.quiz != nil && len(c.quiz[sec]) == 0 && !writing {
 		m.openReview(sec)
 		return nil
 	}
 	m.quiz = &quizState{sec: sec, picked: -1}
-	if c.quiz != nil {
-		m.quiz.qs = c.quiz[sec]
-		return nil
+	switch {
+	case writing:
+	case c.quiz != nil:
+		// Each try sees the choices in another order.
+		for i := range c.quiz[sec] {
+			shuffle(&c.quiz[sec][i])
+		}
+		m.quiz.qs, c.err = c.quiz[sec], ""
+	case c.err == "": // else it is shown, with a key to try again
+		return m.startGen()
 	}
-	if c.err != "" {
-		return nil // shown, with a key to try again
-	}
-	return m.startGen()
+	return nil
 }
 
-// openReview asks for the section in your own words, in the ask view.
+// openReview asks for a section in your own words, as its checkpoint.
 func (m *Model) openReview(sec int) {
-	m.ask = &askState{review: true, sec: sec, follow: true, input: newInput(), entry: store.AskEntry{Unit: -1}}
+	s := m.secs[sec]
+	m.explain(sec, s.title, sectionText(m.units, s))
+}
+
+// openExplain asks for what is selected in your own words, at any time: the
+// sentence, the block, or the section as far as it was read.
+func (m *Model) openExplain() {
+	sent := m.curSentence()
+	switch {
+	case m.sel == scopeSection:
+		s := m.secs[sectionOf(m.secs, m.cur)]
+		title := s.title
+		if m.cur+1 < s.end {
+			title += " · up to here"
+		}
+		m.explain(-1, title, sectionText(m.units, section{start: s.start, end: m.cur + 1}))
+	case m.sel == scopeSentence && sent != "":
+		m.explain(-1, "the sentence “"+snippet(sent)+"”", sent)
+	default:
+		text := blockText(m.unit())
+		m.explain(-1, "the block “"+snippet(text)+"”", text)
+	}
+}
+
+// explain opens the ask view on an explanation to write. sec is the section
+// whose checkpoint this is, or -1.
+func (m *Model) explain(sec int, title, text string) {
+	m.ask = &askState{review: true, sec: sec, revTitle: title, revText: text,
+		follow: true, input: newInput(), entry: store.AskEntry{Unit: -1}}
+}
+
+// snippet is the first words of s, enough to tell which text it is without
+// giving it away.
+func snippet(s string) string {
+	words := strings.Fields(s)
+	if len(words) <= 5 {
+		return strings.Join(words, " ")
+	}
+	return strings.Join(words[:5], " ") + "…"
 }
 
 // setExplain remembers the kind of checkpoint used last.
@@ -245,11 +349,33 @@ func (m *Model) setExplain(on bool) {
 	m.prefErr = m.prefs.Save()
 }
 
-// reviewSystem is the system prompt for checking an explanation of a section.
-func (m *Model) reviewSystem(sec int) string {
-	s := m.check.secs[sec]
-	return fmt.Sprintf("%s\n\nFile: %s\nSection: %s\n\n<file>\n%s\n</file>\n\n<section>\n%s\n</section>",
-		reviewPrompt, m.Path, s.title, m.src, sectionText(m.units, s))
+// reviewSystem is the system prompt for checking an explanation.
+func (m *Model) reviewSystem(a *askState) string {
+	return fmt.Sprintf("%s\n\nFile: %s\nPart: %s\n\n<file>\n%s\n</file>\n\n<part>\n%s\n</part>",
+		reviewPrompt, m.Path, a.revTitle, m.src, a.revText)
+}
+
+// checkMark is the line that shows where a section ends with a checkpoint,
+// and how it went once passed.
+func (m *Model) checkMark(sec int) string {
+	c := m.check
+	label, col := "◆ checkpoint", theme.Dim(theme.Green)
+	sc := c.score[sec]
+	switch {
+	case sc.Total > 0 && sc.Right == sc.Total:
+		label, col = fmt.Sprintf("✔ %d of %d right", sc.Right, sc.Total), theme.Green
+	case sc.Total > 0:
+		label, col = fmt.Sprintf("● %d of %d right", sc.Right, sc.Total), theme.Yellow
+	case c.explained[sec]:
+		label, col = "✔ explained", theme.Green
+	case c.passed[sec]:
+		label, col = "◇ checkpoint skipped", theme.Overlay2
+	case c.quiz != nil && len(c.quiz[sec]) == 1:
+		label += " · 1 question"
+	case c.quiz != nil && len(c.quiz[sec]) > 1:
+		label += fmt.Sprintf(" · %d questions", len(c.quiz[sec]))
+	}
+	return theme.Fg(col).Render(rule(m.contentWidth(), label))
 }
 
 func (m *Model) updateQuiz(msg tea.KeyMsg) tea.Cmd {
@@ -259,22 +385,33 @@ func (m *Model) updateQuiz(msg tea.KeyMsg) tea.Cmd {
 	switch {
 	case key == "esc" || key == "ctrl+c":
 		m.quiz = nil
-	case key == "tab":
+	case key == "tab" || key == "ctrl+e":
 		m.quiz = nil
 		m.setExplain(true)
 		m.openReview(q.sec)
-	case c.quiz == nil:
+	case q.qs == nil:
 		if key == "r" && c.err != "" {
+			if c.regen >= 0 {
+				return m.startRegen(c.regen)
+			}
 			return m.startGen()
 		}
+	case key == "ctrl+r":
+		return m.startRegen(q.sec)
 	case q.done:
-		if next || key == "q" {
+		switch {
+		case next || key == "q":
 			m.quiz = nil
+		case key == "r":
+			return m.openQuiz(q.sec)
 		}
 	case q.picked >= 0:
 		if next {
 			q.i, q.sel, q.picked = q.i+1, 0, -1
-			q.done = q.i >= len(q.qs)
+			if q.done = q.i >= len(q.qs); q.done {
+				c.score[q.sec] = store.Score{Right: q.right, Total: len(q.qs)}
+				store.SaveScores(m.Path, c.hash, c.score)
+			}
 		}
 	default:
 		n := len(q.qs[q.i].Choices)
@@ -291,8 +428,10 @@ func (m *Model) updateQuiz(msg tea.KeyMsg) tea.Cmd {
 		}
 		if pick >= 0 {
 			q.sel, q.picked = pick, pick
+			m.sess.Answered++
 			if pick == q.qs[q.i].Answer {
 				q.right++
+				m.sess.Right++
 			}
 		}
 	}
@@ -320,21 +459,21 @@ func (m *Model) quizView() string {
 	margin := strings.Repeat(" ", max((m.w-cw)/2, 0))
 	bold := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Foreground)).Bold(true)
 
-	title := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).Render("checkpoint")
-	name := theme.Fg(theme.Subtext0).Render(filepath.Base(m.Path))
+	title := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).Render("checkpoint · questions")
+	name := theme.Fg(theme.Subtext0).Render(fmt.Sprintf("%s · section %d of %d", filepath.Base(m.Path), q.sec+1, len(m.secs)))
 	gap := max(cw-lipgloss.Width(title)-lipgloss.Width(name), 1)
 	lines := []string{title + strings.Repeat(" ", gap) + name, ""}
-	lines = append(lines, wrapped(theme.Fg(theme.Subtext0), c.secs[q.sec].title, cw, "")...)
+	lines = append(lines, wrapped(theme.Fg(theme.Subtext0), m.secs[q.sec].title, cw, "")...)
 	lines = append(lines, "")
 
 	var help string
 	switch {
-	case c.quiz == nil && c.err != "":
+	case q.qs == nil && c.err != "":
 		lines = append(lines, wrapped(theme.Fg(theme.Red), c.err, cw, "")...)
-		help = "r try again · tab explain it instead · esc skip"
-	case c.quiz == nil:
+		help = "r try again · ctrl+e explain it instead · esc skip"
+	case q.qs == nil:
 		lines = append(lines, theme.Fg(theme.Overlay2).Render("writing the questions…"))
-		help = "tab explain it instead · esc skip"
+		help = "ctrl+e explain it instead · esc skip"
 	case q.done:
 		col, mark := theme.Green, "✔"
 		if q.right < len(q.qs) {
@@ -342,7 +481,7 @@ func (m *Model) quizView() string {
 		}
 		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color(col)).Bold(true).
 			Render(fmt.Sprintf("%s %d of %d right", mark, q.right, len(q.qs))))
-		help = "enter carry on · tab explain it too"
+		help = "enter carry on · r answer again · ctrl+r new questions · ctrl+e explain it too"
 	default:
 		cur := q.qs[q.i]
 		lines = append(lines, theme.Fg(theme.Overlay2).Render(fmt.Sprintf("question %d of %d", q.i+1, len(q.qs))), "")
@@ -362,7 +501,7 @@ func (m *Model) quizView() string {
 			}
 			lines = append(lines, wrapped(st, ch, cw, mark+theme.Fg(theme.Overlay2).Render(fmt.Sprintf("%d  ", i+1)))...)
 		}
-		help = "↑/↓ move · enter or 1–" + fmt.Sprint(len(cur.Choices)) + " answer · tab explain it instead · esc skip"
+		help = "↑/↓ move · enter or 1–" + fmt.Sprint(len(cur.Choices)) + " answer · ctrl+e explain it instead · esc skip"
 		if q.picked >= 0 {
 			verdict := theme.Fg(theme.Green).Render("Right.")
 			if q.picked != cur.Answer {
@@ -372,7 +511,10 @@ func (m *Model) quizView() string {
 			if cur.Why != "" {
 				lines = append(lines, wrapped(theme.Fg(theme.Subtext1), cur.Why, cw, "")...)
 			}
-			help = "enter next · esc skip"
+			help = "enter next question · esc skip"
+			if q.i == len(q.qs)-1 {
+				help = "enter see the score · esc skip"
+			}
 		}
 	}
 
