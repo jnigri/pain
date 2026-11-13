@@ -84,6 +84,7 @@ type Model struct {
 	Scope  string
 	check  *checks    // nil unless the file is read actively
 	quiz   *quizState // the checkpoint asking questions, while open
+	armID  int        // counts the choices armed, to drop the ticks of earlier ones
 	notice string     // shown in place of the help until the next key
 	closed bool       // the folder view was asked to take over
 }
@@ -192,6 +193,8 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cache = map[int]cached{}
 	case askDeltaMsg, askDoneMsg:
 		return m, m.askEvent(msg)
+	case quizTickMsg:
+		return m, m.armEvent(msg)
 	case tea.KeyMsg:
 		m.notice = ""
 		// The key list closes on any key.
@@ -902,6 +905,13 @@ func (m *Model) header(cw int) string {
 			soon := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Yellow)).Bold(true).Render(fmt.Sprintf("%s · checkpoint in %d", at, n))
 			if lipgloss.Width(left)+lipgloss.Width(soon)+lipgloss.Width(right) < cw {
 				more = soon
+			}
+		}
+		// The questions being written show until they are there.
+		if text, col := m.genStatus(); text != "" {
+			st := theme.Fg(col).Render(" · " + text)
+			if lipgloss.Width(left)+lipgloss.Width(more)+lipgloss.Width(st)+lipgloss.Width(right) < cw {
+				more += st
 			}
 		}
 		left += more

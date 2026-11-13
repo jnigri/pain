@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"pain/internal/markdown"
@@ -137,5 +138,16 @@ func TestWrapHints(t *testing.T) {
 				t.Errorf("wrapHints(%d): line %q is too wide", w, l)
 			}
 		}
+	}
+}
+
+func TestWritten(t *testing.T) {
+	c := &checks{ch: make(chan tea.Msg), regen: -1}
+	if w := c.written(); len(w) != 0 {
+		t.Errorf("nothing written yet: %v", w)
+	}
+	c.partial = `{"sections":[{"questions":[{"q":"a","choices":["x"]},{"q": "b"}]},{"questions":[{"q":"c"`
+	if w := c.written(); !slices.Equal(w, []int{2, 1}) {
+		t.Errorf("written = %v, want [2 1]", w)
 	}
 }

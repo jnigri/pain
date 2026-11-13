@@ -258,7 +258,11 @@ file is cut at its headings and horizontal rules, and sections under 150 words
 join the next one.
 
 You see a checkpoint coming. A line across the text, `◆ checkpoint · 2
-questions`, marks where each section ends. The header shows the section you are
+questions`, marks where each section ends. While Claude writes the questions,
+the header shows how far it is, such as `writing questions 3/8 sections · 5 so
+far`, and the lines of the sections still waiting say so. If the questions
+could not be written, both say it, and `ctrl+g` opens the error with a key to
+try again. The header shows the section you are
 in, such as `◆ 2/5`. For the last 25 words of a section it turns yellow and
 counts them down: `◆ 2/5 · checkpoint in 12`. Once a checkpoint is passed, its line
 shows how it went: `✔ 2 of 2 right`, `● 1 of 2 right`, `✔ explained` or
@@ -272,6 +276,9 @@ questions. pain remembers the one you used last.
   quick multiple-choice questions per section, in the background while you
   type: short choices, on the main point, never trick questions. At
   the checkpoint, pick a choice with `↑` / `↓` and `enter`, or with its number.
+  A bar then fills over the question for under a second before the answer
+  counts, so a key hit by mistake can be undone: `esc` takes it back, another
+  choice changes it, and the same key again skips the wait.
   pain shows the right choice and one line on why, then your score. On the
   score, `r` answers the same questions again, with the choices in another
   order. `ctrl+r` has Claude write new questions for the section, at any

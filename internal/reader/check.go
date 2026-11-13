@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -63,6 +65,24 @@ type checks struct {
 	cancel    context.CancelFunc
 	ch        chan tea.Msg // set while Claude writes questions
 	regen     int          // the section getting new questions, -1 for the whole file
+	partial   string       // what Claude wrote so far, for the progress
+}
+
+var questionRe = regexp.MustCompile(`"q"\s*:`)
+
+// written reads the progress of the questions being written for the whole
+// file: how many each section has so far. The last section listed may still
+// be growing.
+func (c *checks) written() []int {
+	if c.ch == nil || c.regen >= 0 {
+		return nil
+	}
+	parts := strings.Split(c.partial, `"questions"`)
+	n := make([]int, 0, len(parts))
+	for _, p := range parts[1:] {
+		n = append(n, len(questionRe.FindAllString(p, -1)))
+	}
+	return n
 }
 
 // quizState is the checkpoint asking questions. qs is nil while the questions
@@ -75,6 +95,53 @@ type quizState struct {
 	picked int // the choice made, -1 before
 	right  int
 	done   bool // every question answered: the score
+	// armed is a choice made but not final yet: a bar fills for answerDelay,
+	// so a key hit by mistake can still be taken back.
+	armed bool
+	armAt time.Time
+}
+
+// answerDelay is how long a choice can be taken back.
+const answerDelay = 800 * time.Millisecond
+
+// quizTickMsg moves the bar of an armed choice. id tells its arming apart
+// from earlier ones.
+type quizTickMsg struct{ id int }
+
+func armTick(id int) tea.Cmd {
+	return tea.Tick(40*time.Millisecond, func(time.Time) tea.Msg { return quizTickMsg{id} })
+}
+
+// arm selects a choice and starts the delay before it counts.
+func (m *Model) arm(pick int) tea.Cmd {
+	q := m.quiz
+	q.sel, q.armed, q.armAt = pick, true, time.Now()
+	m.armID++
+	return armTick(m.armID)
+}
+
+// armEvent makes the armed choice final once the delay is over.
+func (m *Model) armEvent(msg quizTickMsg) tea.Cmd {
+	q := m.quiz
+	if q == nil || !q.armed || msg.id != m.armID {
+		return nil
+	}
+	if time.Since(q.armAt) < answerDelay {
+		return armTick(msg.id)
+	}
+	m.answer()
+	return nil
+}
+
+// answer takes the selected choice as the answer.
+func (m *Model) answer() {
+	q := m.quiz
+	q.armed, q.picked = false, q.sel
+	m.sess.Answered++
+	if q.sel == q.qs[q.i].Answer {
+		q.right++
+		m.sess.Right++
+	}
 }
 
 // setupChecks turns checkpoints on for this file, reusing saved questions.
@@ -152,7 +219,7 @@ func (m *Model) startRegen(sec int) tea.Cmd {
 func (m *Model) gen(regen int, prompt string) tea.Cmd {
 	c := m.check
 	ctx, cancel := context.WithCancel(context.Background())
-	c.err, c.regen = "", regen
+	c.err, c.regen, c.partial = "", regen, ""
 	c.cancel, c.ch = cancel, startAsk(ctx, m.prefs.Model, quizPrompt, prompt, nil)
 	return waitAsk(c.ch)
 }
@@ -175,6 +242,7 @@ func (m *Model) genEvent(msg tea.Msg) (tea.Cmd, bool) {
 		if msg.ch != c.ch {
 			return nil, false
 		}
+		c.partial += msg.text
 		return waitAsk(c.ch), true
 	case askDoneMsg:
 		if msg.ch != c.ch {
@@ -370,6 +438,15 @@ func (m *Model) checkMark(sec int) string {
 		label, col = "✔ explained", theme.Green
 	case c.passed[sec]:
 		label, col = "◇ checkpoint skipped", theme.Overlay2
+	case c.quiz == nil && c.err != "":
+		label, col = "◆ checkpoint · questions not written, ctrl+g to try again", theme.Dim(theme.Red)
+	case c.quiz == nil:
+		// A section is written once Claude has moved on to the next one.
+		if w := c.written(); sec < len(w)-1 {
+			label += fmt.Sprintf(" · %d questions written", w[sec])
+		} else {
+			label += " · writing the questions…"
+		}
 	case c.quiz != nil && len(c.quiz[sec]) == 1:
 		label += " · 1 question"
 	case c.quiz != nil && len(c.quiz[sec]) > 1:
@@ -383,6 +460,8 @@ func (m *Model) updateQuiz(msg tea.KeyMsg) tea.Cmd {
 	key := msg.String()
 	next := key == "enter" || key == " "
 	switch {
+	case q.armed && key == "esc":
+		q.armed = false
 	case key == "esc" || key == "ctrl+c":
 		m.quiz = nil
 	case key == "tab" || key == "ctrl+e":
@@ -418,21 +497,20 @@ func (m *Model) updateQuiz(msg tea.KeyMsg) tea.Cmd {
 		pick := -1
 		switch {
 		case key == "up" || key == "k":
-			q.sel = (q.sel + n - 1) % n
+			q.sel, q.armed = (q.sel+n-1)%n, false
 		case key == "down" || key == "j":
-			q.sel = (q.sel + 1) % n
+			q.sel, q.armed = (q.sel+1)%n, false
 		case next:
 			pick = q.sel
 		case len(key) == 1 && key[0] >= '1' && int(key[0]-'1') < n:
 			pick = int(key[0] - '1')
 		}
-		if pick >= 0 {
-			q.sel, q.picked = pick, pick
-			m.sess.Answered++
-			if pick == q.qs[q.i].Answer {
-				q.right++
-				m.sess.Right++
-			}
+		switch {
+		case pick < 0:
+		case q.armed && pick == q.sel:
+			m.answer() // asked twice: no need to wait
+		default:
+			return m.arm(pick)
 		}
 	}
 	return nil
@@ -484,7 +562,14 @@ func (m *Model) quizView() string {
 		help = "enter carry on · r answer again · ctrl+r new questions · ctrl+e explain it too"
 	default:
 		cur := q.qs[q.i]
-		lines = append(lines, theme.Fg(theme.Overlay2).Render(fmt.Sprintf("question %d of %d", q.i+1, len(q.qs))), "")
+		// The bar of an armed choice fills over the question.
+		bar := ""
+		if q.armed {
+			filled := min(int(float64(cw)*float64(time.Since(q.armAt))/float64(answerDelay)), cw)
+			bar = theme.Fg(theme.Yellow).Render(strings.Repeat("━", filled)) +
+				theme.Fg(theme.Surface0).Render(strings.Repeat("━", cw-filled))
+		}
+		lines = append(lines, theme.Fg(theme.Overlay2).Render(fmt.Sprintf("question %d of %d", q.i+1, len(q.qs))), bar)
 		lines = append(lines, wrapped(bold, cur.Q, cw, "")...)
 		lines = append(lines, "")
 		for i, ch := range cur.Choices {
@@ -502,6 +587,9 @@ func (m *Model) quizView() string {
 			lines = append(lines, wrapped(st, ch, cw, mark+theme.Fg(theme.Overlay2).Render(fmt.Sprintf("%d  ", i+1)))...)
 		}
 		help = "↑/↓ move · enter or 1–" + fmt.Sprint(len(cur.Choices)) + " answer · ctrl+e explain it instead · esc skip"
+		if q.armed {
+			help = fmt.Sprintf("answering %d… · enter now · esc take it back · ↑/↓ or a number to change", q.sel+1)
+		}
 		if q.picked >= 0 {
 			verdict := theme.Fg(theme.Green).Render("Right.")
 			if q.picked != cur.Answer {
@@ -528,4 +616,26 @@ func (m *Model) quizView() string {
 	}
 	lines = append(lines, "", theme.Fg(theme.Overlay0).Render(help+" · "+view.KeysHint))
 	return margin + strings.Join(lines, "\n"+margin)
+}
+
+// genStatus tells the header how the questions are coming along, or "" once
+// they are there.
+func (m *Model) genStatus() (text, color string) {
+	c := m.check
+	switch {
+	case c.quiz != nil:
+		return "", ""
+	case c.err != "":
+		return "questions not written · ctrl+g", theme.Red
+	case c.ch != nil:
+		done, qs := 0, 0
+		if w := c.written(); len(w) > 0 {
+			done = len(w) - 1
+			for _, n := range w {
+				qs += n
+			}
+		}
+		return fmt.Sprintf("writing questions %d/%d sections · %d so far", done, len(m.secs), qs), theme.Subtext0
+	}
+	return "", ""
 }
