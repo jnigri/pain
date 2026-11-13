@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/hand.png" width="240" alt="A pixel-art hand, reaching for the keyboard">
+  <img src="docs/hand.png" width="240" alt="A cracked pixel-art hand, reaching to grip">
 </p>
 
 <h1 align="center">pain</h1>
