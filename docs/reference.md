@@ -399,7 +399,7 @@ the way down the screen.
 
 ```sh
 mise run check    # gofmt, go vet and go test ./...
-mise run build    # builds ./pain
+mise run build    # builds pain and installs it into $GOBIN
 ```
 
 Unit tests cover the pure parts: parsing, matching, wrapping and sentences

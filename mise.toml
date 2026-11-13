@@ -6,17 +6,14 @@ description = "Download Go module dependencies"
 run = "go mod download"
 
 [tasks.build]
-description = "Build ./pain"
-run = "go build -o pain ."
-
-[tasks.install]
-description = "Install pain into $GOBIN"
+description = "Build pain and install it into $GOBIN"
+alias = "install"
 run = "go install ."
 
 [tasks.tour]
 description = "Run pain on the bundled tour"
 depends = ["build"]
-run = "./pain samples/tour.md"
+run = "pain samples/tour.md"
 
 [tasks.check]
 description = "Format check, vet and test"
