@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -149,5 +150,27 @@ func TestWritten(t *testing.T) {
 	c.partial = `{"sections":[{"questions":[{"q":"a","choices":["x"]},{"q": "b"}]},{"questions":[{"q":"c"`
 	if w := c.written(); !slices.Equal(w, []int{2, 1}) {
 		t.Errorf("written = %v, want [2 1]", w)
+	}
+}
+
+func TestKeyHold(t *testing.T) {
+	now := time.Now()
+	h := keyHold{key: "1", last: now.Add(-firstRepeatGap / 2)}
+	if h.held("2") {
+		t.Error("another key is not the key held")
+	}
+	if !h.held("1") || !h.repeated {
+		t.Error("the first repeat, within firstRepeatGap, is the key held")
+	}
+	h.last = now.Add(-(repeatGap + firstRepeatGap) / 2)
+	if !h.released() || h.held("1") {
+		t.Error("once repeating, a gap over repeatGap is a release")
+	}
+	tap := keyHold{key: "enter", last: now.Add(-firstRepeatGap - time.Millisecond)}
+	if !tap.released() {
+		t.Error("a press that never repeats is let go after firstRepeatGap")
+	}
+	if holdDelay <= firstRepeatGap {
+		t.Error("a single press must not last long enough to answer")
 	}
 }

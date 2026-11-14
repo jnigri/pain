@@ -40,10 +40,9 @@ var askKeys = []view.KeyRow{
 
 var quizKeys = []view.KeyRow{
 	{Key: "↑ / ↓ / j / k", Action: "move between the choices"},
-	{Key: "enter / space", Action: "answer with the choice selected, then go on"},
-	{Key: "1 – 9", Action: "answer with that choice"},
-	{Key: "", Action: "an answer counts once its bar is full: the same key again"},
-	{Key: "", Action: "skips the wait, esc takes it back, another choice changes it"},
+	{Key: "enter / space", Action: "held: answer with the choice selected; then go on"},
+	{Key: "1 – 9", Action: "held: answer with that choice"},
+	{Key: "", Action: "an answer counts once its bar is full; let go before to take it back"},
 	{Key: "r", Action: "on the score, answer the same questions again"},
 	{Key: "ctrl+r", Action: "have Claude write new questions for the section"},
 	{Key: "ctrl+e / tab", Action: "explain the section in your own words instead"},

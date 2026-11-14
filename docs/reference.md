@@ -277,10 +277,12 @@ questions. pain remembers the one you used last.
 - **Questions.** The first time you open a file, Claude writes one or two
   quick multiple-choice questions per section, in the background while you
   type: short choices, on the main point, never trick questions. At
-  the checkpoint, pick a choice with `↑` / `↓` and `enter`, or with its number.
-  A bar then fills over the question for under a second before the answer
-  counts, so a key hit by mistake can be undone: `esc` takes it back, another
-  choice changes it, and the same key again skips the wait.
+  the checkpoint, pick a choice with `↑` / `↓` and `enter`, or with its number,
+  and keep the key held: a bar fills over the question, and the answer counts
+  once it is full, after a second. Letting go before, or `esc`, takes it back,
+  so a key hit by mistake does not answer. Terminals do not tell when a key is
+  let go, so pain watches the key repeat: with key repeat turned off in the
+  system settings, no answer counts.
   pain shows the right choice and one line on why, then your score. On the
   score, `r` answers the same questions again, with the choices in another
   order. `ctrl+r` has Claude write new questions for the section, at any
@@ -297,8 +299,8 @@ section you are in at any time, before its end or to answer them again.
 | Key               | Action                                              |
 |-------------------|-----------------------------------------------------|
 | `↑` / `↓`         | move between the choices (`j` / `k` too)            |
-| `enter` / `space` | answer with the choice selected, then go on         |
-| `1` – `9`         | answer with that choice                             |
+| `enter` / `space` | held: answer with the choice selected; then go on   |
+| `1` – `9`         | held: answer with that choice                       |
 | `r`               | on the score, answer the same questions again       |
 | `ctrl+r`          | have new questions written for the section          |
 | `ctrl+e` / `tab`  | explain the section instead                         |
