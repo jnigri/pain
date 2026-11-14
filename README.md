@@ -57,6 +57,7 @@ pain .           # browse a folder
 |-----------|-----------------------------------------------|
 | `tab`     | widen the selection: sentence, block, section |
 | `ctrl+l`  | skip the selection (`ctrl+h` goes back)       |
+| `ctrl+n`  | skim mode: `enter` skips the selection        |
 | `ctrl+a`  | ask Claude about the selection                |
 | `ctrl+e`  | explain the selection in your own words       |
 | `ctrl+t`  | turn active reading on or off                 |

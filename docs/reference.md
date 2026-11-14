@@ -110,6 +110,13 @@ Enter counts as a space, so you can press it at the end of each screen line.
 `ctrl+l` fills in the rest of the sentence you are on, and `ctrl+h` un-types
 it; at a sentence start, `ctrl+h` goes back to the one before.
 
+`ctrl+n` turns skim mode on or off, for going through text without typing it.
+In skim mode, `enter` does what `ctrl+l` does: it skips the rest of the
+selection, so you go sentence by sentence (or block by block, section by
+section) with one key. Typing still works, but `enter` no longer types a space.
+The footer shows the mode in yellow while it is on. It lasts until you turn it
+off or close the file.
+
 `tab` widens the selection: from the sentence to the whole block, then to the
 section, then back to the sentence. `shift+tab` goes the other way. The footer
 shows the three, with the one selected underlined. The underline covers the
@@ -160,6 +167,7 @@ stays in the paragraph, to be typed like the rest.
 | `enter`                          | type the next space             |
 | `tab` / `shift+tab`              | widen / narrow the selection: sentence, block, section |
 | `ctrl+l`                         | skip the rest of the selection  |
+| `ctrl+n`                         | skim mode on or off: `enter` skips the selection like `ctrl+l` |
 | `ctrl+h`                         | back to the start of the selection, then the one before |
 | `ctrl+j` / `alt+enter`           | skip to the next screen line    |
 | `ctrl+k`                         | back to the start of the screen line, then the line before |

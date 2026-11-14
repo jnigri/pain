@@ -5,6 +5,7 @@ import "pain/internal/view"
 var docKeys = []view.KeyRow{
 	{Key: "tab / shift+tab", Action: "widen / narrow the selection: sentence, block, section"},
 	{Key: "ctrl+l", Action: "skip the rest of the selection"},
+	{Key: "ctrl+n", Action: "skim mode on or off: enter skips the selection like ctrl+l"},
 	{Key: "ctrl+h", Action: "back to the start of the selection, then the one before"},
 	{Key: "ctrl+j / ctrl+k", Action: "the same by screen line (alt+enter skips one too)"},
 	{Key: "ctrl+a", Action: "ask Claude about the selection"},
