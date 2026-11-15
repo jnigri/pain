@@ -281,7 +281,7 @@ func (b *Model) View() string {
 	const margin = 2
 	w := b.W - 2*margin
 	bodyH := max(b.H-4, 1) // header, two rules, footer
-	sep := theme.Fg(theme.Overlay0).Render(" │ ")
+	sep := theme.Fg(theme.Muted).Render(" │ ")
 
 	// The parent column goes first when the screen is narrow.
 	var cols [][]string
@@ -296,7 +296,7 @@ func (b *Model) View() string {
 		if b.dir.parent != nil {
 			cols = append(cols, listColumn(b.dir.parent, b.dir, false, pw, bodyH))
 		} else {
-			title := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).
+			title := theme.Fg(theme.Purple).Bold(true).
 				Render(runewidth.Truncate(" "+b.Root.name+"/", pw, "…"))
 			cols = append(cols, padColumn([]string{title}, bodyH))
 		}
@@ -310,7 +310,7 @@ func (b *Model) View() string {
 	pad := strings.Repeat(" ", margin)
 	var sb strings.Builder
 	sb.WriteString(pad + b.header(w) + "\n")
-	sb.WriteString(pad + theme.Fg(theme.Overlay0).Render(strings.Repeat("─", w)) + "\n")
+	sb.WriteString(pad + theme.Fg(theme.Muted).Render(strings.Repeat("─", w)) + "\n")
 	for i := 0; i < bodyH; i++ {
 		sb.WriteString(pad)
 		for c, col := range cols {
@@ -325,25 +325,25 @@ func (b *Model) View() string {
 		}
 		sb.WriteString("\n")
 	}
-	sb.WriteString(pad + theme.Fg(theme.Overlay0).Render(strings.Repeat("─", w)) + "\n")
+	sb.WriteString(pad + theme.Fg(theme.Muted).Render(strings.Repeat("─", w)) + "\n")
 	sb.WriteString(pad + b.footer(w))
 	return sb.String()
 }
 
 func (b *Model) header(w int) string {
 	r := b.Root
-	left := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).Render(r.name)
+	left := theme.Fg(theme.Purple).Bold(true).Render(r.name)
 	if b.active {
 		left += theme.Fg(theme.Green).Render("  ◆ active")
 	}
 	const barW = 20
 	filled := barW * r.pct() / 100
 	parts := []string{
-		theme.Fg(theme.Subtext1).Render(fmt.Sprintf("%s / %s words", thousands(r.read), thousands(r.total))),
+		theme.Fg(theme.Foreground).Render(fmt.Sprintf("%s / %s words", thousands(r.read), thousands(r.total))),
 		theme.Fg(theme.Yellow).Render(strings.Repeat("━", filled)) +
-			theme.Fg(theme.Overlay0).Render(strings.Repeat("━", barW-filled)) +
-			theme.Fg(theme.Subtext0).Render(fmt.Sprintf(" %3d%%", r.pct())),
-		theme.Fg(theme.Subtext1).Render(fmt.Sprintf("%d/%d files", r.done, r.files)),
+			theme.Fg(theme.Muted).Render(strings.Repeat("━", barW-filled)) +
+			theme.Fg(theme.Muted).Render(fmt.Sprintf(" %3d%%", r.pct())),
+		theme.Fg(theme.Foreground).Render(fmt.Sprintf("%d/%d files", r.done, r.files)),
 	}
 	if r.score.Total > 0 {
 		parts = append(parts, theme.Fg(scoreColor(r.score)).Render("◆ "+scoreText(r.score)))
@@ -353,7 +353,7 @@ func (b *Model) header(w int) string {
 		parts = parts[1:]
 	}
 	if t := b.speed.TimeLeft(r.total - r.read); t != "" {
-		parts = append(parts, theme.Fg(theme.Subtext0).Render(t))
+		parts = append(parts, theme.Fg(theme.Muted).Render(t))
 	}
 	right := strings.Join(parts, "   ")
 	gap := max(w-lipgloss.Width(left)-lipgloss.Width(right), 3)
@@ -385,7 +385,7 @@ func (b *Model) footer(w int) string {
 		active = "t active off"
 	}
 	parts = append(parts, "n next unread", "s stats", active, "q quit", view.KeysHint)
-	return theme.Fg(theme.Overlay0).Render(runewidth.Truncate(strings.Join(parts, " · "), w, "…"))
+	return theme.Fg(theme.Muted).Render(runewidth.Truncate(strings.Join(parts, " · "), w, "…"))
 }
 
 // listColumn draws the entries of folder dir, with sel highlighted: as the
@@ -406,11 +406,11 @@ func listColumn(dir, sel *Node, active bool, w, h int) []string {
 }
 
 func entryRow(n *Node, w int, sel, active bool) string {
-	name, nameCol := n.name, theme.Subtext1
+	name, nameCol := n.name, theme.Foreground
 	if n.dir {
 		name, nameCol = name+"/", theme.Blue
 	}
-	mark, markCol := "", theme.Overlay2
+	mark, markCol := "", theme.Muted
 	switch {
 	case n.files > 0 && n.done == n.files:
 		mark, markCol = "✓", theme.Green
@@ -428,17 +428,17 @@ func entryRow(n *Node, w int, sel, active bool) string {
 	gap := max(w-2-runewidth.StringWidth(name)-side, 1)
 
 	st := lipgloss.NewStyle()
-	nameSt := st.Foreground(lipgloss.Color(nameCol))
+	nameSt := nameCol.On(st)
 	switch {
 	case sel && active:
-		st = st.Background(lipgloss.Color(theme.Surface0))
-		nameSt = st.Foreground(lipgloss.Color(theme.Foreground)).Bold(true)
+		st = st.Background(theme.Surface())
+		nameSt = theme.Foreground.On(st).Bold(true)
 	case sel:
-		nameSt = nameSt.Bold(true).Foreground(lipgloss.Color(theme.Purple))
+		nameSt = theme.Purple.On(nameSt).Bold(true)
 	}
 	return st.Render(" ") + nameSt.Render(name) + st.Render(strings.Repeat(" ", gap)) +
-		st.Foreground(lipgloss.Color(scoreColor(n.score))).Render(score) +
-		st.Foreground(lipgloss.Color(markCol)).Render(mark) + st.Render(" ")
+		scoreColor(n.score).On(st).Render(score) +
+		markCol.On(st).Render(mark) + st.Render(" ")
 }
 
 // preview shows a folder's entries, or the file around where you stopped.
@@ -459,7 +459,7 @@ func (b *Model) preview(n *Node, w, h int) []string {
 	if n.score.Total > 0 {
 		status += " · questions " + scoreText(n.score)
 	}
-	lines := []string{theme.Fg(theme.Subtext0).Render(status), ""}
+	lines := []string{theme.Fg(theme.Muted).Render(status), ""}
 	at := 0
 	if n.hasPos && !n.pos.Done && n.read > 0 {
 		at = n.pos.Unit
@@ -485,7 +485,7 @@ func padColumn(lines []string, h int) []string {
 func scoreText(s store.Score) string { return fmt.Sprintf("%d/%d", s.Right, s.Total) }
 
 // scoreColor is green when every question was answered right.
-func scoreColor(s store.Score) string {
+func scoreColor(s store.Score) theme.Color {
 	if s.Right == s.Total {
 		return theme.Green
 	}
@@ -527,22 +527,22 @@ func (b *Model) statsView() string {
 			ws[i] = max(ws[i], runewidth.StringWidth(c))
 		}
 	}
-	lines := []string{lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).Render("stats"), ""}
+	lines := []string{theme.Fg(theme.Purple).Bold(true).Render("stats"), ""}
 	for k, r := range rows {
 		st := theme.Fg(theme.Foreground)
 		if k == 0 {
-			st = theme.Fg(theme.Subtext0)
+			st = theme.Fg(theme.Muted)
 		}
-		l := theme.Fg(theme.Subtext1).Render(r[0]) + strings.Repeat(" ", ws[0]-runewidth.StringWidth(r[0]))
+		l := theme.Fg(theme.Foreground).Render(r[0]) + strings.Repeat(" ", ws[0]-runewidth.StringWidth(r[0]))
 		for i := 1; i < 3; i++ {
 			l += strings.Repeat(" ", 3+ws[i]-runewidth.StringWidth(r[i])) + st.Render(r[i])
 		}
 		lines = append(lines, l)
 	}
-	lines = append(lines, "", theme.Fg(theme.Overlay2).Render("Top speed is the fastest run of 20 words. Questions count every try."),
-		"", theme.Fg(theme.Overlay0).Render("any key to close"))
+	lines = append(lines, "", theme.Fg(theme.Muted).Render("Top speed is the fastest run of 20 words. Questions count every try."),
+		"", theme.Fg(theme.Muted).Render("any key to close"))
 	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color(theme.Overlay0)).Padding(1, 3).
+		BorderForeground(theme.Edge()).Padding(1, 3).
 		Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
 	return lipgloss.Place(b.W, b.H, lipgloss.Center, lipgloss.Center, box)
 }

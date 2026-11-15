@@ -96,5 +96,5 @@ pain writes, and how the code is laid out.
 
 Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea),
 [Lip Gloss](https://github.com/charmbracelet/lipgloss) and
-[goldmark](https://github.com/yuin/goldmark). Colors from the
-[0x96f](https://github.com/filipjanevski/0x96f.nvim) theme.
+[goldmark](https://github.com/yuin/goldmark). Colors come from your terminal's
+theme, light or dark.

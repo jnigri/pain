@@ -184,6 +184,8 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
 		m.cache = map[int]cached{}
+	case theme.ChangedMsg:
+		m.cache = map[int]cached{}
 	case askDeltaMsg, askDoneMsg:
 		return m, m.askEvent(msg)
 	case quizTickMsg:
@@ -755,7 +757,7 @@ func wrapHints(w int, hs []string) []string {
 	var lines []string
 	for _, h := range hs {
 		if n := len(lines); n > 0 && lipgloss.Width(lines[n-1])+lipgloss.Width(sep)+lipgloss.Width(h) <= w {
-			lines[n-1] += theme.Fg(theme.Overlay0).Render(sep) + h
+			lines[n-1] += theme.Fg(theme.Muted).Render(sep) + h
 		} else {
 			lines = append(lines, h)
 		}
@@ -766,7 +768,7 @@ func wrapHints(w int, hs []string) []string {
 // footer shows the keys that matter where the cursor is, in the width of the
 // text, on as many lines as they need.
 func (m *Model) footer(cw int) []string {
-	dim := theme.Fg(theme.Overlay0)
+	dim := theme.Fg(theme.Muted)
 	switch {
 	case m.notice != "":
 		return []string{dim.Render(runewidth.Truncate(m.notice, cw, "…"))}
@@ -778,7 +780,7 @@ func (m *Model) footer(cw int) []string {
 	for i, n := range scopeNames {
 		st := dim
 		if scope(i) == m.sel {
-			st = theme.Fg(theme.Subtext1).Underline(true)
+			st = theme.Fg(theme.Foreground).Underline(true)
 		}
 		names[i] = st.Render(n)
 	}
@@ -879,16 +881,16 @@ func (m *Model) header(cw int) string {
 	const barW = 20
 	filled := barW * pct / 100
 	bar := theme.Fg(theme.Yellow).Render(strings.Repeat("━", filled)) +
-		theme.Fg(theme.Overlay0).Render(strings.Repeat("━", barW-filled))
-	right := bar + theme.Fg(theme.Subtext0).Render(fmt.Sprintf(" %3d%%", pct))
-	left := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).Render(filepath.Base(m.Path))
+		theme.Fg(theme.Muted).Render(strings.Repeat("━", barW-filled))
+	right := bar + theme.Fg(theme.Muted).Render(fmt.Sprintf(" %3d%%", pct))
+	left := theme.Fg(theme.Purple).Bold(true).Render(filepath.Base(m.Path))
 	if m.check != nil {
 		// The section the cursor is in. The checkpoint is only announced
 		// once it is close.
 		at := fmt.Sprintf("  ◆ %d/%d", sectionOf(m.secs, m.cur)+1, len(m.secs))
 		more := theme.Fg(theme.Green).Render(at)
 		if n := m.toCheckpoint(); n <= nearCheckpoint {
-			soon := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Yellow)).Bold(true).Render(fmt.Sprintf("%s · checkpoint in %d", at, n))
+			soon := theme.Fg(theme.Yellow).Bold(true).Render(fmt.Sprintf("%s · checkpoint in %d", at, n))
 			if lipgloss.Width(left)+lipgloss.Width(soon)+lipgloss.Width(right) < cw {
 				more = soon
 			}
@@ -907,12 +909,12 @@ func (m *Model) header(cw int) string {
 }
 
 func (m *Model) finishView() string {
-	title := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Green)).Bold(true).Render("✔ done")
-	name := theme.Fg(theme.Subtext1).Render(filepath.Base(m.Path))
-	help := theme.Fg(theme.Overlay2).Render("r restart · q quit")
+	title := theme.Fg(theme.Green).Bold(true).Render("✔ done")
+	name := theme.Fg(theme.Foreground).Render(filepath.Base(m.Path))
+	help := theme.Fg(theme.Muted).Render("r restart · q quit")
 	rows := []string{title, "", name, ""}
 	if s := sessionLine(m.tally()); s != "" {
-		rows = append(rows, theme.Fg(theme.Subtext0).Render(s), "")
+		rows = append(rows, theme.Fg(theme.Muted).Render(s), "")
 	}
 	box := lipgloss.JoinVertical(lipgloss.Center, append(rows, help)...)
 	return lipgloss.Place(m.w, m.h, lipgloss.Center, lipgloss.Center, box)

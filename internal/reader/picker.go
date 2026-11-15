@@ -78,27 +78,27 @@ func (m *Model) updatePicker(key string) {
 
 func (m *Model) pickerView() string {
 	p := m.pick
-	title := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).Render("model")
-	lines := []string{title, theme.Fg(theme.Subtext0).Render("answers your questions and writes the checkpoints"), ""}
+	title := theme.Fg(theme.Purple).Bold(true).Render("model")
+	lines := []string{title, theme.Fg(theme.Muted).Render("answers your questions and writes the checkpoints"), ""}
 	for i, id := range p.ids {
 		mark := "  "
-		name := theme.Fg(theme.Subtext1).Render(modelName(id))
+		name := theme.Fg(theme.Foreground).Render(modelName(id))
 		if i == p.sel {
 			mark = theme.Fg(theme.Yellow).Render("› ")
-			name = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Foreground)).Bold(true).Render(modelName(id))
+			name = theme.Fg(theme.Foreground).Bold(true).Render(modelName(id))
 		}
 		hint := "uses your claude settings"
 		if id != store.ModelDefault {
 			hint = "--model " + id
 		}
-		lines = append(lines, mark+name+"  "+theme.Fg(theme.Overlay2).Render(hint))
+		lines = append(lines, mark+name+"  "+theme.Fg(theme.Muted).Render(hint))
 	}
-	lines = append(lines, "", theme.Fg(theme.Overlay0).Render("↑/↓ move · enter choose · esc cancel"))
+	lines = append(lines, "", theme.Fg(theme.Muted).Render("↑/↓ move · enter choose · esc cancel"))
 	if p.thenAsk {
-		lines = append(lines, theme.Fg(theme.Overlay0).Render("change it later with ctrl+p"))
+		lines = append(lines, theme.Fg(theme.Muted).Render("change it later with ctrl+p"))
 	}
 	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color(theme.Overlay0)).Padding(1, 3).
+		BorderForeground(theme.Edge()).Padding(1, 3).
 		Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
 	return lipgloss.Place(m.w, m.h, lipgloss.Center, lipgloss.Center, box)
 }

@@ -22,8 +22,8 @@ func (m *Model) askView() string {
 	case m.ask.review:
 		label = "explain"
 	}
-	title := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).Render(label)
-	name := theme.Fg(theme.Subtext0).Render(filepath.Base(m.Path))
+	title := theme.Fg(theme.Purple).Bold(true).Render(label)
+	name := theme.Fg(theme.Muted).Render(filepath.Base(m.Path))
 	gap := max(cw-lipgloss.Width(title)-lipgloss.Width(name), 1)
 	var sb strings.Builder
 	sb.WriteString(margin + title + strings.Repeat(" ", gap) + name + "\n\n")
@@ -80,12 +80,12 @@ func (m *Model) askPane(cw, h int) []string {
 	}
 	switch {
 	case a.review:
-		top = wrapped(theme.Fg(theme.Subtext0), a.revTitle, cw, "")
+		top = wrapped(theme.Fg(theme.Muted), a.revTitle, cw, "")
 		// What to do shows until the first explanation is sent.
 		if len(a.entry.Turns) == 0 && a.mode == askInput {
-			top = append(top, "", lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Foreground)).Bold(true).
+			top = append(top, "", theme.Fg(theme.Foreground).Bold(true).
 				Render("Explain it in your own words, from memory."))
-			top = append(top, wrapped(theme.Fg(theme.Overlay2),
+			top = append(top, wrapped(theme.Fg(theme.Muted),
 				"A few sentences are enough. Claude says whether you got it or what you missed, and you can talk it over.", cw, "")...)
 		}
 	case a.entry.Section:
@@ -105,7 +105,7 @@ func (m *Model) askPane(cw, h int) []string {
 		top = textLines(a.entry.Block, cw, "", 1)
 	}
 	if limit := max(h/4, 1); len(top) > limit {
-		top = append(top[:limit-1], theme.Fg(theme.Overlay2).Render("┃ …"))
+		top = append(top[:limit-1], theme.Fg(theme.Muted).Render("┃ …"))
 	}
 	top = append(top, "")
 
@@ -126,7 +126,7 @@ func (m *Model) askPane(cw, h int) []string {
 		body = append(body, imageLines(a.pendImg)...)
 		body = append(body, "")
 		if a.partial == "" {
-			body = append(body, theme.Fg(theme.Overlay2).Render("thinking…"))
+			body = append(body, theme.Fg(theme.Muted).Render("thinking…"))
 		} else {
 			body = append(body, markdownLines(a.partial, cw)...)
 		}
@@ -199,24 +199,24 @@ func (m *Model) askPane(cw, h int) []string {
 	if maxScroll > 0 {
 		help += fmt.Sprintf(" · %d/%d", a.scroll+bodyH, total)
 	}
-	return append(append(top, body...), "", theme.Fg(theme.Overlay0).Render(help))
+	return append(append(top, body...), "", theme.Fg(theme.Muted).Render(help))
 }
 
 // imageLines names the images of a question, under it.
 func imageLines(images []string) []string {
 	var out []string
 	for _, p := range images {
-		out = append(out, theme.Fg(theme.Overlay2).Render("  ▣ "+filepath.Base(p)))
+		out = append(out, theme.Fg(theme.Muted).Render("  ▣ "+filepath.Base(p)))
 	}
 	return out
 }
 
 func (m *Model) historyPane(cw, h int) []string {
 	a := m.ask
-	out := []string{theme.Fg(theme.Subtext1).Render(fmt.Sprintf("history · %d asked", len(a.hist))), ""}
+	out := []string{theme.Fg(theme.Foreground).Render(fmt.Sprintf("history · %d asked", len(a.hist))), ""}
 	listH := max(h-4, 1)
 	if len(a.hist) == 0 {
-		out = append(out, theme.Fg(theme.Overlay2).Render("no questions asked about this file yet"))
+		out = append(out, theme.Fg(theme.Muted).Render("no questions asked about this file yet"))
 	}
 	first := max(a.sel-listH+1, 0)
 	for i := first; i < len(a.hist) && i < first+listH; i++ {
@@ -246,14 +246,14 @@ func (m *Model) historyPane(cw, h int) []string {
 		}
 		if i == a.sel {
 			out = append(out, theme.Fg(theme.Yellow).Render("› ")+
-				lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Foreground)).Bold(true).Render(string(line)))
+				theme.Fg(theme.Foreground).Bold(true).Render(string(line)))
 		} else {
-			out = append(out, "  "+theme.Fg(theme.Subtext0).Render(string(line)))
+			out = append(out, "  "+theme.Fg(theme.Muted).Render(string(line)))
 		}
 	}
 	for len(out) < h-1 {
 		out = append(out, "")
 	}
 	out = out[:h-1]
-	return append(out, theme.Fg(theme.Overlay0).Render("enter open · g go to block · esc back · "+view.KeysHint))
+	return append(out, theme.Fg(theme.Muted).Render("enter open · g go to block · esc back · "+view.KeysHint))
 }

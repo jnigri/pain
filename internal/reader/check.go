@@ -483,7 +483,7 @@ func (m *Model) checkMark(sec int) string {
 	case c.explained[sec]:
 		label, col = "✔ explained", theme.Green
 	case c.passed[sec]:
-		label, col = "◇ checkpoint skipped", theme.Overlay2
+		label, col = "◇ checkpoint skipped", theme.Muted
 	case c.quiz == nil && c.err != "":
 		label, col = "◆ checkpoint · questions not written, ctrl+g to try again", theme.Dim(theme.Red)
 	case c.quiz == nil:
@@ -586,13 +586,13 @@ func (m *Model) quizView() string {
 	q, c := m.quiz, m.check
 	cw := m.contentWidth()
 	margin := strings.Repeat(" ", max((m.w-cw)/2, 0))
-	bold := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Foreground)).Bold(true)
+	bold := theme.Fg(theme.Foreground).Bold(true)
 
-	title := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Purple)).Bold(true).Render("checkpoint · questions")
-	name := theme.Fg(theme.Subtext0).Render(fmt.Sprintf("%s · section %d of %d", filepath.Base(m.Path), q.sec+1, len(m.secs)))
+	title := theme.Fg(theme.Purple).Bold(true).Render("checkpoint · questions")
+	name := theme.Fg(theme.Muted).Render(fmt.Sprintf("%s · section %d of %d", filepath.Base(m.Path), q.sec+1, len(m.secs)))
 	gap := max(cw-lipgloss.Width(title)-lipgloss.Width(name), 1)
 	lines := []string{title + strings.Repeat(" ", gap) + name, ""}
-	lines = append(lines, wrapped(theme.Fg(theme.Subtext0), m.secs[q.sec].title, cw, "")...)
+	lines = append(lines, wrapped(theme.Fg(theme.Muted), m.secs[q.sec].title, cw, "")...)
 	lines = append(lines, "")
 
 	var help string
@@ -601,14 +601,14 @@ func (m *Model) quizView() string {
 		lines = append(lines, wrapped(theme.Fg(theme.Red), c.err, cw, "")...)
 		help = "r try again · ctrl+e explain it instead · esc skip"
 	case q.qs == nil:
-		lines = append(lines, theme.Fg(theme.Overlay2).Render("writing the questions…"))
+		lines = append(lines, theme.Fg(theme.Muted).Render("writing the questions…"))
 		help = "ctrl+e explain it instead · esc skip"
 	case q.done:
 		col, mark := theme.Green, "✔"
 		if q.right < len(q.qs) {
 			col, mark = theme.Yellow, "●"
 		}
-		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color(col)).Bold(true).
+		lines = append(lines, theme.Fg(col).Bold(true).
 			Render(fmt.Sprintf("%s %d of %d right", mark, q.right, len(q.qs))))
 		help = "enter carry on · r answer again · ctrl+r new questions · ctrl+e explain it too"
 	default:
@@ -618,13 +618,13 @@ func (m *Model) quizView() string {
 		if q.armed {
 			filled := min(int(float64(cw)*float64(time.Since(q.armAt))/float64(holdDelay)), cw)
 			bar = theme.Fg(theme.Yellow).Render(strings.Repeat("━", filled)) +
-				theme.Fg(theme.Surface0).Render(strings.Repeat("━", cw-filled))
+				lipgloss.NewStyle().Foreground(theme.Surface()).Render(strings.Repeat("━", cw-filled))
 		}
-		lines = append(lines, theme.Fg(theme.Overlay2).Render(fmt.Sprintf("question %d of %d", q.i+1, len(q.qs))), bar)
+		lines = append(lines, theme.Fg(theme.Muted).Render(fmt.Sprintf("question %d of %d", q.i+1, len(q.qs))), bar)
 		lines = append(lines, wrapped(bold, cur.Q, cw, "")...)
 		lines = append(lines, "")
 		for i, ch := range cur.Choices {
-			mark, st := "  ", theme.Fg(theme.Subtext1)
+			mark, st := "  ", theme.Fg(theme.Foreground)
 			switch {
 			case q.picked < 0 && i == q.sel:
 				mark, st = theme.Fg(theme.Yellow).Render("› "), bold
@@ -633,9 +633,9 @@ func (m *Model) quizView() string {
 			case q.picked >= 0 && i == q.picked:
 				mark, st = theme.Fg(theme.Red).Render("✘ "), theme.Fg(theme.Red)
 			case q.picked >= 0:
-				st = theme.Fg(theme.Overlay2)
+				st = theme.Fg(theme.Muted)
 			}
-			lines = append(lines, wrapped(st, ch, cw, mark+theme.Fg(theme.Overlay2).Render(fmt.Sprintf("%d  ", i+1)))...)
+			lines = append(lines, wrapped(st, ch, cw, mark+theme.Fg(theme.Muted).Render(fmt.Sprintf("%d  ", i+1)))...)
 		}
 		help = "↑/↓ move · hold enter or 1–" + fmt.Sprint(len(cur.Choices)) + " to answer · ctrl+e explain it instead · esc skip"
 		if q.armed {
@@ -648,7 +648,7 @@ func (m *Model) quizView() string {
 			}
 			lines = append(lines, "", verdict)
 			if cur.Why != "" {
-				lines = append(lines, wrapped(theme.Fg(theme.Subtext1), cur.Why, cw, "")...)
+				lines = append(lines, wrapped(theme.Fg(theme.Foreground), cur.Why, cw, "")...)
 			}
 			help = "enter next question · esc skip"
 			if q.i == len(q.qs)-1 {
@@ -665,17 +665,17 @@ func (m *Model) quizView() string {
 	for len(lines) < bodyH {
 		lines = append(lines, "")
 	}
-	lines = append(lines, "", theme.Fg(theme.Overlay0).Render(help+" · "+view.KeysHint))
+	lines = append(lines, "", theme.Fg(theme.Muted).Render(help+" · "+view.KeysHint))
 	return margin + strings.Join(lines, "\n"+margin)
 }
 
 // genStatus tells the header how the questions are coming along, or "" once
 // they are there.
-func (m *Model) genStatus() (text, color string) {
+func (m *Model) genStatus() (text string, color theme.Color) {
 	c := m.check
 	switch {
 	case c.quiz != nil:
-		return "", ""
+		return "", theme.Color{}
 	case c.err != "":
 		return "questions not written · ctrl+g", theme.Red
 	case c.ch != nil:
@@ -686,7 +686,7 @@ func (m *Model) genStatus() (text, color string) {
 				qs += n
 			}
 		}
-		return fmt.Sprintf("writing questions %d/%d sections · %d so far", done, len(m.secs), qs), theme.Subtext0
+		return fmt.Sprintf("writing questions %d/%d sections · %d so far", done, len(m.secs), qs), theme.Muted
 	}
-	return "", ""
+	return "", theme.Color{}
 }

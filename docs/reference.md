@@ -17,8 +17,13 @@ get bullets, code sits on its own background. Text you have not typed yet is
 dimmed. As you type, it lights up in its real style. The sentence you are on is
 underlined.
 
-The colors come from the [0x96f](https://github.com/filipjanevski/0x96f.nvim)
-theme.
+The colors come from your terminal's theme: text uses its foreground and its
+ANSI palette, and what is dimmed is drawn faint, so pain reads well on a light
+or a dark background. The background behind code and the selected row is
+mixed from the terminal's colors, asked for at start (or, if the terminal does
+not answer, from the system's light or dark appearance). When the terminal
+switches between light and dark while pain runs (Ghostty, kitty and tmux 3.6
+report it), pain follows.
 
 ## Install
 
@@ -376,7 +381,7 @@ under `internal/`, and imports only flow down this list:
 | Package    | Role |
 |------------|------|
 | `markdown` | walks the goldmark AST and flattens it into units; character folding and matching, word wrapping, sentence bounds, word counts. Knows nothing about the terminal. |
-| `theme`    | the 0x96f palette and `CellStyle`, which maps a cell's style and typing state to a Lip Gloss style |
+| `theme`    | colors from the terminal's palette, light/dark detection, and `CellStyle`, which maps a cell's style and typing state to a Lip Gloss style |
 | `picture`  | an image file to lines of text: sent to the terminal and shown through placeholder characters (Kitty graphics protocol), or drawn in half-block characters |
 | `store`    | state kept between runs: atomic JSON files for saved positions, last file per folder, typing and question stats, questions, scores and conversations, plus the preferences file |
 | `view`     | drawing shared by the screens: `RenderUnit` (one unit to styled lines, with the sentence underline) and the key help box |
@@ -448,9 +453,10 @@ in `theme.CellStyle` and, for block-level layout, in `view.RenderUnit`.
 generated from that list. Then read `m.prefs.YourField` where the behavior
 lives, usually in `internal/reader/reader.go`.
 
-**Change colors.** All colors are constants in `internal/theme`. Use
-palette constants (`theme.Yellow`…) rather than inline hex values, and
-`theme.Dim` for pending text.
+**Change colors.** All colors live in `internal/theme`. Use its ANSI palette
+colors (`theme.Yellow`…, `theme.Muted` for secondary text) rather than hex
+values, so pain keeps following the terminal's theme; `theme.Dim` for pending
+text, and `theme.Surface()` / `theme.Edge()` for backgrounds and borders.
 
 ### Conventions
 

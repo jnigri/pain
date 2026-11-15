@@ -56,11 +56,11 @@ func RenderUnit(u *markdown.Unit, w int, c *Cursor, done bool) (lines []string, 
 		}
 	}
 	pending := !current && !done
-	tint := func(hex string) string {
-		if pending && hex != "" {
-			return theme.Dim(hex)
+	tint := func(c theme.Color) theme.Color {
+		if pending {
+			return theme.Dim(c)
 		}
-		return hex
+		return c
 	}
 
 	bar := ""
@@ -74,7 +74,7 @@ func RenderUnit(u *markdown.Unit, w int, c *Cursor, done bool) (lines []string, 
 	case markdown.Spacer:
 		return []string{strings.TrimRight(bar, " ")}, 0
 	case markdown.Rule:
-		return []string{lead + theme.Fg(tint(theme.Overlay0)).Render(strings.Repeat("─", max(w-leadW, 1)))}, 0
+		return []string{lead + theme.Fg(tint(theme.Muted)).Render(strings.Repeat("─", max(w-leadW, 1)))}, 0
 	}
 
 	pw := runewidth.StringWidth(u.Prefix)
@@ -87,7 +87,7 @@ func RenderUnit(u *markdown.Unit, w int, c *Cursor, done bool) (lines []string, 
 			if name == "" {
 				name = filepath.Base(u.Image)
 			}
-			pic = []string{theme.Fg(tint(theme.Overlay0)).Italic(true).Render(runewidth.Truncate("▨ "+name, max(avail, 1), "…"))}
+			pic = []string{theme.Fg(tint(theme.Muted)).Italic(true).Render(runewidth.Truncate("▨ "+name, max(avail, 1), "…"))}
 		}
 		// A picture sits in the middle of the room it has.
 		pad := ""
@@ -133,7 +133,7 @@ func RenderUnit(u *markdown.Unit, w int, c *Cursor, done bool) (lines []string, 
 		} else {
 			sb.WriteString(strings.Repeat(" ", pw))
 		}
-		band := theme.CellStyle(u, 0, theme.Done, false)
+		band := theme.CellStyle(u, 0, theme.Done)
 		if u.Kind == markdown.CodeLine {
 			sb.WriteString(band.Render(" "))
 		}
@@ -143,7 +143,7 @@ func RenderUnit(u *markdown.Unit, w int, c *Cursor, done bool) (lines []string, 
 		var runStyle runKey
 		flush := func() {
 			if len(run) > 0 {
-				out := theme.CellStyle(u, runStyle.f, runStyle.st, runStyle.focus).Render(string(run))
+				out := theme.Cell(u, runStyle.f, runStyle.st, runStyle.focus, string(run))
 				if runStyle.f&markdown.Link != 0 && !runStyle.focus {
 					out = theme.Dotted(out)
 				}
