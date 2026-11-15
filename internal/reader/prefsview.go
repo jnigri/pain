@@ -15,7 +15,7 @@ var prefItems = []struct {
 	name, desc string
 	field      func(*store.Prefs) *bool
 }{
-	{"typing mode", "enter types the next space instead of skipping the selection", func(p *store.Prefs) *bool { return &p.Typing }},
+	{"typing mode", "type the text yourself; when off, enter/space reads forward and delete goes back", func(p *store.Prefs) *bool { return &p.Typing }},
 	{"explain at checkpoints", "active reading: explain each section yourself instead of answering questions", func(p *store.Prefs) *bool { return &p.Explain }},
 }
 

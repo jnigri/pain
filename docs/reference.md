@@ -118,11 +118,14 @@ base letter (`é` accepts `e`).
 `ctrl+l` fills in the rest of the sentence you are on, and `ctrl+h` un-types
 it; at a sentence start, `ctrl+h` goes back to the one before.
 
-`enter` does what `ctrl+l` does: it skips the rest of the selection, so you go
-sentence by sentence (or block by block, section by section) with one key.
-Typing still works. Turn on typing mode in the preferences to type everything
-yourself: `enter` then counts as a space, so you can press it at the end of
-each screen line. The footer shows which key skips.
+With typing mode off (the default), text keys do nothing. `enter` or `space`
+moves to the next sentence; `delete` or `backspace` goes to the previous
+sentence. These keys always move by sentence, regardless of the selection.
+Shift+Enter is not supported by the current terminal input library.
+
+Turn on typing mode in the preferences to type the text yourself. `enter`
+then counts as a space, so you can press it at the end of each screen line.
+`ctrl+l` and `ctrl+h` still move by selection in either mode.
 
 `tab` widens the selection: from the sentence to the whole block, then to the
 section, then back to the sentence. `shift+tab` goes the other way. The footer
@@ -169,9 +172,10 @@ stays in the paragraph, to be typed like the rest.
 
 | Key                              | Action                          |
 |----------------------------------|---------------------------------|
-| `backspace`                      | delete one character            |
+| `backspace`                      | reading: previous sentence; typing: delete one character            |
 | `ctrl+w` / `alt+backspace`       | delete one word                 |
-| `enter`                          | skip the rest of the selection; in typing mode, type the next space |
+| `enter` / `space`                | reading: next sentence; typing: type a space |
+| `delete`                         | reading: previous sentence |
 | `tab` / `shift+tab`              | widen / narrow the selection: sentence, block, section |
 | `ctrl+l`                         | skip the rest of the selection  |
 | `ctrl+h`                         | back to the start of the selection, then the one before |
@@ -340,7 +344,7 @@ Press `ctrl+p` to change preferences. They save straight away to
 | Preference          | Default | Effect                                                                                                                                              |
 |---------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
 | `model`             | unset   | The Claude model that answers questions, passed to `claude` as `--model`. Chosen the first time you ask, changed from the preferences. `default` uses your Claude Code setting; any alias (`fable`, `opus`, `sonnet`, `haiku`) or full model name works. |
-| `typing_mode`       | off     | When on, `enter` types the next space instead of skipping the rest of the selection.                                                               |
+| `typing_mode`       | off     | When on, type the text yourself. When off, Enter/Space advances by sentence and Delete/Backspace goes back.                                                               |
 | `checkpoint_explain` | off    | When on, checkpoints ask you to explain the section instead of answering questions. Switching at a checkpoint changes it.                           |
 | `active_reading`    | empty   | The folders and files read actively, as absolute paths. A folder covers everything under it. Changed with `t` and `ctrl+t`.                         |
 

@@ -7,8 +7,9 @@ lights up in its real colors.
 ## 1. Inline styles
 
 Paragraphs can hold **bold**, *italic*, `inline code`, a [link](https://example.com)
-and ~~struck~~ words. Long paragraphs wrap to the window. Enter skips to the next
-sentence; turn on typing mode in the preferences to have it type the space instead.
+and ~~struck~~ words. Long paragraphs wrap to the window. Enter or Space advances to the next
+sentence; Delete or Backspace goes back. Turn on typing mode in the preferences
+to type the text yourself.
 
 Typographic characters are matched by their plain keyboard twin: “smart quotes”,
 an em dash — like this one — and an ellipsis… all accept `"`, `-` and `.` as plain keys.

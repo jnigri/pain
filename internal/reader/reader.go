@@ -292,29 +292,41 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.nextLine()
 		case tea.KeyCtrlK:
 			m.prevLine()
+		case tea.KeyDelete:
+			if !m.prefs.Typing {
+				m.prevSentence()
+			}
 		case tea.KeyBackspace:
-			if msg.Alt {
+			if !m.prefs.Typing {
+				m.prevSentence()
+			} else if msg.Alt {
 				m.deleteWord()
 			} else {
 				m.backspace()
 			}
 		case tea.KeyCtrlW:
-			m.deleteWord()
+			if m.prefs.Typing {
+				m.deleteWord()
+			}
 		case tea.KeySpace:
-			m.tick()
-			m.typeRune(' ')
+			if m.prefs.Typing {
+				m.tick()
+				m.typeRune(' ')
+			} else {
+				m.nextSentence()
+			}
 		case tea.KeyEnter:
 			switch {
 			case msg.Alt:
 				m.nextLine()
 			case !m.prefs.Typing:
-				m.skip()
+				m.nextSentence()
 			default:
 				m.tick()
 				m.enter()
 			}
 		case tea.KeyRunes:
-			if !msg.Paste {
+			if m.prefs.Typing && !msg.Paste {
 				m.tick()
 				for _, r := range msg.Runes {
 					m.typeRune(r)
@@ -773,7 +785,7 @@ func (m *Model) footer(cw int) []string {
 	case m.notice != "":
 		return []string{dim.Render(runewidth.Truncate(m.notice, cw, "…"))}
 	case m.scroll != 0:
-		return []string{dim.Render(runewidth.Truncate("↑/↓ scroll · type or esc to return to the cursor", cw, "…"))}
+		return []string{dim.Render(runewidth.Truncate("↑/↓ scroll · any key returns to the cursor", cw, "…"))}
 	}
 	// The selection comes first, the scope the underline covers standing out.
 	names := make([]string, len(scopeNames))
@@ -785,12 +797,11 @@ func (m *Model) footer(cw int) []string {
 		names[i] = st.Render(n)
 	}
 	hs := []string{dim.Render("tab ") + strings.Join(names, " ")}
-	// Out of typing mode, enter does what ctrl+l does.
-	skipKey := "ctrl+l"
-	if !m.prefs.Typing {
-		skipKey = "enter"
+	if m.prefs.Typing {
+		hs = append(hs, dim.Render("ctrl+l skip "+scopeNames[m.sel]))
+	} else {
+		hs = append(hs, dim.Render("enter/space next sentence"), dim.Render("delete previous sentence"))
 	}
-	hs = append(hs, dim.Render(skipKey+" skip "+scopeNames[m.sel]))
 	rest := []string{"ctrl+a ask", "ctrl+e explain"}
 	if m.check != nil {
 		rest = append(rest, "ctrl+g quiz")
