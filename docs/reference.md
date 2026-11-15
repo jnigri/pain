@@ -109,17 +109,15 @@ Case does not matter: `a` and `A` are the same key. Some characters accept a pla
 accept `'`, `– —` accept `-`, `…` accepts `.`, and accented letters accept their
 base letter (`é` accepts `e`).
 
-Enter counts as a space, so you can press it at the end of each screen line.
 `ctrl+l` and `ctrl+h` move by sentence, the one the underline shows.
 `ctrl+l` fills in the rest of the sentence you are on, and `ctrl+h` un-types
 it; at a sentence start, `ctrl+h` goes back to the one before.
 
-`ctrl+n` turns skim mode on or off, for going through text without typing it.
-In skim mode, `enter` does what `ctrl+l` does: it skips the rest of the
-selection, so you go sentence by sentence (or block by block, section by
-section) with one key. Typing still works, but `enter` no longer types a space.
-The footer shows the mode in yellow while it is on. It lasts until you turn it
-off or close the file.
+`enter` does what `ctrl+l` does: it skips the rest of the selection, so you go
+sentence by sentence (or block by block, section by section) with one key.
+Typing still works. Turn on typing mode in the preferences to type everything
+yourself: `enter` then counts as a space, so you can press it at the end of
+each screen line. The footer shows which key skips.
 
 `tab` widens the selection: from the sentence to the whole block, then to the
 section, then back to the sentence. `shift+tab` goes the other way. The footer
@@ -168,10 +166,9 @@ stays in the paragraph, to be typed like the rest.
 |----------------------------------|---------------------------------|
 | `backspace`                      | delete one character            |
 | `ctrl+w` / `alt+backspace`       | delete one word                 |
-| `enter`                          | type the next space             |
+| `enter`                          | skip the rest of the selection; in typing mode, type the next space |
 | `tab` / `shift+tab`              | widen / narrow the selection: sentence, block, section |
 | `ctrl+l`                         | skip the rest of the selection  |
-| `ctrl+n`                         | skim mode on or off: `enter` skips the selection like `ctrl+l` |
 | `ctrl+h`                         | back to the start of the selection, then the one before |
 | `ctrl+j` / `alt+enter`           | skip to the next screen line    |
 | `ctrl+k`                         | back to the start of the screen line, then the line before |
@@ -330,6 +327,7 @@ Press `ctrl+p` to change preferences. They save straight away to
 {
   "model": "sonnet",
   "checkpoint_explain": false,
+  "typing_mode": false,
   "active_reading": ["/Users/you/notes"]
 }
 ```
@@ -337,6 +335,7 @@ Press `ctrl+p` to change preferences. They save straight away to
 | Preference          | Default | Effect                                                                                                                                              |
 |---------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
 | `model`             | unset   | The Claude model that answers questions, passed to `claude` as `--model`. Chosen the first time you ask, changed from the preferences. `default` uses your Claude Code setting; any alias (`fable`, `opus`, `sonnet`, `haiku`) or full model name works. |
+| `typing_mode`       | off     | When on, `enter` types the next space instead of skipping the rest of the selection.                                                               |
 | `checkpoint_explain` | off    | When on, checkpoints ask you to explain the section instead of answering questions. Switching at a checkpoint changes it.                           |
 | `active_reading`    | empty   | The folders and files read actively, as absolute paths. A folder covers everything under it. Changed with `t` and `ctrl+t`.                         |
 

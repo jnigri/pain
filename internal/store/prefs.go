@@ -16,6 +16,9 @@ type Prefs struct {
 	// Explain makes a checkpoint ask for the section in your own words
 	// instead of asking questions about it.
 	Explain bool `json:"checkpoint_explain"`
+	// Typing makes enter type the next space. Off, enter skips the rest of
+	// the selection, like ctrl+l.
+	Typing bool `json:"typing_mode"`
 	// Active lists the folders and files read actively: a checkpoint ends
 	// each section of the files under them.
 	Active []string `json:"active_reading,omitempty"`

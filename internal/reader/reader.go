@@ -86,7 +86,6 @@ type Model struct {
 	quiz   *quizState // the checkpoint asking questions, while open
 	armID  int        // counts the choices armed, to drop the ticks of earlier ones
 	notice string     // shown in place of the help until the next key
-	skim   bool       // enter skips the selection instead of typing a space
 	closed bool       // the folder view was asked to take over
 }
 
@@ -278,12 +277,6 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.widen(-1)
 		case tea.KeyCtrlL:
 			m.skip()
-		case tea.KeyCtrlN:
-			m.skim = !m.skim
-			m.notice = "skim mode off: enter types a space again"
-			if m.skim {
-				m.notice = "skim mode on: enter skips the " + scopeNames[m.sel] + " · ctrl+n to stop"
-			}
 		case tea.KeyCtrlH:
 			switch m.sel {
 			case scopeSection:
@@ -312,7 +305,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch {
 			case msg.Alt:
 				m.nextLine()
-			case m.skim:
+			case !m.prefs.Typing:
 				m.skip()
 			default:
 				m.tick()
@@ -790,12 +783,12 @@ func (m *Model) footer(cw int) []string {
 		names[i] = st.Render(n)
 	}
 	hs := []string{dim.Render("tab ") + strings.Join(names, " ")}
-	// In skim mode, enter does what ctrl+l does, and the hint stands out.
-	if m.skim {
-		hs = append(hs, theme.Fg(theme.Yellow).Render("skim: enter skips "+scopeNames[m.sel]+" · ctrl+n stop"))
-	} else {
-		hs = append(hs, dim.Render("ctrl+l skip "+scopeNames[m.sel]))
+	// Out of typing mode, enter does what ctrl+l does.
+	skipKey := "ctrl+l"
+	if !m.prefs.Typing {
+		skipKey = "enter"
 	}
+	hs = append(hs, dim.Render(skipKey+" skip "+scopeNames[m.sel]))
 	rest := []string{"ctrl+a ask", "ctrl+e explain"}
 	if m.check != nil {
 		rest = append(rest, "ctrl+g quiz")

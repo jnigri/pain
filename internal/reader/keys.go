@@ -5,7 +5,6 @@ import "pain/internal/view"
 var docKeys = []view.KeyRow{
 	{Key: "tab / shift+tab", Action: "widen / narrow the selection: sentence, block, section"},
 	{Key: "ctrl+l", Action: "skip the rest of the selection"},
-	{Key: "ctrl+n", Action: "skim mode on or off: enter skips the selection like ctrl+l"},
 	{Key: "ctrl+h", Action: "back to the start of the selection, then the one before"},
 	{Key: "ctrl+j / ctrl+k", Action: "the same by screen line (alt+enter skips one too)"},
 	{Key: "ctrl+a", Action: "ask Claude about the selection"},
@@ -13,7 +12,7 @@ var docKeys = []view.KeyRow{
 	{Key: "ctrl+g", Action: "answer the questions of this section now, or again"},
 	{Key: "ctrl+t", Action: "active reading on or off: a checkpoint ends each section"},
 	{Key: "backspace", Action: "delete one character (ctrl+w / alt+backspace: one word)"},
-	{Key: "enter", Action: "type the next space"},
+	{Key: "enter", Action: "skip the selection like ctrl+l (typing mode: type the next space)"},
 	{Key: "↑ / ↓", Action: "scroll (ctrl+u / ctrl+d or pgup / pgdown: half a page)"},
 	{Key: "ctrl+p", Action: "preferences"},
 	{Key: "esc / ctrl+c", Action: "save your position and quit"},
