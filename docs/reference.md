@@ -100,8 +100,12 @@ Some things are filled in for you:
 - leading indentation in code blocks
 - table borders (type a row as its cells separated by single spaces)
 - characters you cannot type on a normal keyboard, such as emoji and arrows
+- punctuation and spaces: typing the next letter or digit fills in what is
+  before it, so with `). a` ahead of the cursor, pressing `a` types all four.
+  Punctuation at the end of a block is free, and a block with no letters or
+  digits is passed over
 
-Some characters accept a plain keyboard equivalent: `“ ”` accept `"`, `‘ ’`
+Case does not matter: `a` and `A` are the same key. Some characters accept a plain keyboard equivalent: `“ ”` accept `"`, `‘ ’`
 accept `'`, `– —` accept `-`, `…` accepts `.`, and accented letters accept their
 base letter (`é` accepts `e`).
 
@@ -233,8 +237,8 @@ no tools, so it only answers.
 Each turn runs `claude -p` again with the conversation so far, so Claude Code
 keeps no session of its own, and nothing shows up in `claude --resume`.
 
-Answers are kept in `asks.json` (see below). By default the questions take the
-whole screen; the `ask_split` preference shows them below the text instead.
+Answers are kept in `asks.json` (see below). The questions take the whole
+screen.
 
 ### Explaining in your own words
 
@@ -324,9 +328,6 @@ Press `ctrl+p` to change preferences. They save straight away to
 
 ```json
 {
-  "case_sensitive": false,
-  "skip_punctuation": true,
-  "ask_split": false,
   "model": "sonnet",
   "checkpoint_explain": false,
   "active_reading": ["/Users/you/notes"]
@@ -335,9 +336,6 @@ Press `ctrl+p` to change preferences. They save straight away to
 
 | Preference          | Default | Effect                                                                                                                                              |
 |---------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
-| `case_sensitive`    | off     | When off, `a` and `A` are the same key.                                                                                                             |
-| `skip_punctuation`  | on      | Typing the next letter or digit fills in the punctuation and spaces before it. With `). a` ahead of the cursor, pressing `a` types all four. Punctuation at the end of a block is free. |
-| `ask_split`         | off     | When on, questions and answers show below the text instead of taking the whole screen.                                                             |
 | `model`             | unset   | The Claude model that answers questions, passed to `claude` as `--model`. Chosen the first time you ask, changed from the preferences. `default` uses your Claude Code setting; any alias (`fable`, `opus`, `sonnet`, `haiku`) or full model name works. |
 | `checkpoint_explain` | off    | When on, checkpoints ask you to explain the section instead of answering questions. Switching at a checkpoint changes it.                           |
 | `active_reading`    | empty   | The folders and files read actively, as absolute paths. A folder covers everything under it. Changed with `t` and `ctrl+t`.                         |
@@ -445,8 +443,8 @@ elements) or `builder.inlines` (inline elements) in
 `Skip`. If it needs its own look, add an `Attr` flag or a `Kind` and handle it
 in `theme.CellStyle` and, for block-level layout, in `view.RenderUnit`.
 
-**Add a preference.** Add a `bool` field with a JSON tag to `store.Prefs`, set
-its default in `defaultPrefs` (`internal/store/prefs.go`), and add a row to
+**Add a preference.** Add a `bool` field with a JSON tag to `store.Prefs`
+(`internal/store/prefs.go`), off by default, and add a row to
 `prefItems` (`internal/reader/prefsview.go`); the preferences screen is
 generated from that list. Then read `m.prefs.YourField` where the behavior
 lives, usually in `internal/reader/reader.go`.

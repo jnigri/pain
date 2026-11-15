@@ -72,7 +72,7 @@ func TestScopes(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	words := func(n int) string { return strings.Repeat("word ", n) + "\n\n" }
 	src := []byte("# Title\n\nOne two. Three four.\n\n" + words(300) + "## Two\n\n" + words(300))
-	m := New("/x.md", src, markdown.Parse(src), 0, store.Prefs{SkipPunct: true})
+	m := New("/x.md", src, markdown.Parse(src), 0, store.Prefs{})
 	if len(m.secs) != 2 {
 		t.Fatalf("%d sections, want 2", len(m.secs))
 	}

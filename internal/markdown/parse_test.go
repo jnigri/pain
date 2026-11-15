@@ -63,21 +63,21 @@ func TestTidy(t *testing.T) {
 func TestMatches(t *testing.T) {
 	tests := []struct {
 		typed, want rune
-		cs          bool
 		ok          bool
 	}{
-		{'a', 'a', false, true},
-		{'A', 'a', false, true},
-		{'A', 'a', true, false},
-		{'\'', '’', false, true},
-		{'"', '“', false, true},
-		{'-', '—', false, true},
-		{'e', 'é', false, true},
-		{'x', 'y', false, false},
+		{'a', 'a', true},
+		{'A', 'a', true},
+		{'a', 'A', true},
+		{'\'', '’', true},
+		{'"', '“', true},
+		{'-', '—', true},
+		{'e', 'é', true},
+		{'E', 'é', true},
+		{'x', 'y', false},
 	}
 	for _, tt := range tests {
-		if got := Matches(tt.typed, tt.want, tt.cs); got != tt.ok {
-			t.Errorf("matches(%q, %q, %v) = %v, want %v", tt.typed, tt.want, tt.cs, got, tt.ok)
+		if got := Matches(tt.typed, tt.want); got != tt.ok {
+			t.Errorf("matches(%q, %q) = %v, want %v", tt.typed, tt.want, got, tt.ok)
 		}
 	}
 }

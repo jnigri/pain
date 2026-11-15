@@ -478,11 +478,10 @@ func untypeable(r rune) bool {
 	return fold(r) > unicode.MaxASCII && !unicode.IsLetter(r) && !unicode.IsDigit(r)
 }
 
-func Matches(typed, want rune, caseSensitive bool) bool {
-	if typed == want || fold(typed) == fold(want) {
-		return true
-	}
-	return !caseSensitive && unicode.ToLower(fold(typed)) == unicode.ToLower(fold(want))
+// Matches tells whether typed counts as want: case, accents and typographic
+// variants of punctuation are ignored.
+func Matches(typed, want rune) bool {
+	return typed == want || unicode.ToLower(fold(typed)) == unicode.ToLower(fold(want))
 }
 
 func IsAlnum(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }

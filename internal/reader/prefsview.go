@@ -15,9 +15,6 @@ var prefItems = []struct {
 	name, desc string
 	field      func(*store.Prefs) *bool
 }{
-	{"case sensitive", "a and A count as different letters", func(p *store.Prefs) *bool { return &p.CaseSensitive }},
-	{"skip punctuation", "typing the next letter fills in the punctuation before it", func(p *store.Prefs) *bool { return &p.SkipPunct }},
-	{"split ask view", "show questions and answers below the text instead of full screen", func(p *store.Prefs) *bool { return &p.SplitAsk }},
 	{"explain at checkpoints", "active reading: explain each section yourself instead of answering questions", func(p *store.Prefs) *bool { return &p.Explain }},
 }
 

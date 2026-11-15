@@ -16,7 +16,7 @@ Accents too: café, naïve, déjà vu.
 
 ## 2. Punctuation
 
-With *skip punctuation* on (the default), you can type straight through
+You can type straight through
 brackets (like these), commas, dots... and quotes: "just type the letters".
 A trailing full stop is filled in for you.
 

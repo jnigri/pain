@@ -135,15 +135,12 @@ func New(path string, src []byte, units []markdown.Unit, start int, p store.Pref
 	return m
 }
 
-// needsTyping tells whether unit i stops the cursor. With skip punctuation on,
-// units holding no letters or digits are passed over.
+// needsTyping tells whether unit i stops the cursor. Units holding no letters
+// or digits are passed over.
 func (m *Model) needsTyping(i int) bool {
 	u := &m.units[i]
 	if !u.Typeable() {
 		return false
-	}
-	if !m.prefs.SkipPunct {
-		return true
 	}
 	for _, c := range u.Cells {
 		if !c.Skip && markdown.IsAlnum(c.R) {
@@ -160,10 +157,6 @@ func (m *Model) countTotal() {
 			m.total++
 		}
 	}
-}
-
-func (m *Model) match(typed, want rune) bool {
-	return markdown.Matches(typed, want, m.prefs.CaseSensitive)
 }
 
 // Init has Claude write the questions of a file read actively.
@@ -487,16 +480,14 @@ func (m *Model) typeRune(r rune) {
 		return
 	}
 	k := p
-	if !m.match(r, cs[p].R) {
+	if !markdown.Matches(r, cs[p].R) {
+		// Look past punctuation and spaces for the key just pressed.
 		k = -1
-		if m.prefs.SkipPunct {
-			// Look past punctuation and spaces for the key just pressed.
-			for i := p; i < len(cs) && k < 0; i++ {
-				if m.match(r, cs[i].R) {
-					k = i
-				} else if markdown.IsAlnum(cs[i].R) {
-					break
-				}
+		for i := p; i < len(cs) && k < 0; i++ {
+			if markdown.Matches(r, cs[i].R) {
+				k = i
+			} else if markdown.IsAlnum(cs[i].R) {
+				break
 			}
 		}
 		if k < 0 {
@@ -531,7 +522,7 @@ func (m *Model) enter() {
 			m.typeRune(' ')
 			return
 		}
-		if !m.prefs.SkipPunct || markdown.IsAlnum(cs[k].R) {
+		if markdown.IsAlnum(cs[k].R) {
 			return
 		}
 	}
@@ -672,11 +663,11 @@ func (m *Model) fillTo(end int) {
 }
 
 // complete is true once nothing that needs typing is left, mistakes or not.
-// With skip punctuation on, trailing punctuation is free.
+// Trailing punctuation is free.
 func (m *Model) complete() bool {
 	cs := m.unit().Cells
 	for _, c := range cs[len(m.typed):] {
-		if !m.prefs.SkipPunct || markdown.IsAlnum(c.R) {
+		if markdown.IsAlnum(c.R) {
 			return false
 		}
 	}
@@ -738,44 +729,25 @@ func (m *Model) View() string {
 	if m.quiz != nil {
 		return m.quizView()
 	}
-	// A checkpoint takes the whole screen, also at the end of the file.
-	if m.ask != nil && m.ask.review {
+	// Questions take the whole screen, a checkpoint also at the end of the file.
+	if m.ask != nil && (m.ask.review || !m.Finished) {
 		return m.askView()
 	}
 	if m.Finished {
 		return m.finishView()
 	}
-	if m.ask != nil && !m.prefs.SplitAsk {
-		return m.askView()
-	}
 	cw := m.contentWidth()
 	margin := strings.Repeat(" ", max((m.w-cw)/2, 0))
 	docMargin := margin[min(len(gutter), len(margin)):] // docLines brings the gutter
-	var pane []string
 	// The footer wraps on a narrow screen, and the text gives it the room.
 	foot := m.footer(cw)
 	bodyH := max(m.h-3-len(foot), 1)
-	if m.ask != nil {
-		pane = m.askPane(cw, max(m.h*45/100, 6))
-		bodyH = max(m.h-3-len(pane), 1) // header, blank and separator
-	}
 	body := m.docLines(cw, bodyH)
 
 	var sb strings.Builder
 	sb.WriteString(margin + m.header(cw) + "\n\n")
 	for _, l := range body {
 		sb.WriteString(docMargin + l + "\n")
-	}
-	if pane != nil {
-		// The pane brings its own help line, in place of the blank and help below.
-		sb.WriteString(margin + theme.Fg(theme.Overlay0).Render(rule(cw, "ask")) + "\n")
-		for i, l := range pane {
-			if i > 0 {
-				sb.WriteString("\n")
-			}
-			sb.WriteString(margin + l)
-		}
-		return sb.String()
 	}
 	for _, l := range foot {
 		sb.WriteString("\n" + margin + l)
@@ -843,7 +815,7 @@ func (m *Model) footer(cw int) []string {
 
 // docLines is the document around the cursor, exactly bodyH lines tall.
 func (m *Model) docLines(cw, bodyH int) []string {
-	cur, curLine := view.RenderUnit(m.unit(), cw, &view.Cursor{Typed: m.typed, CaseSensitive: m.prefs.CaseSensitive, WholeBlock: m.sel != scopeSentence}, false)
+	cur, curLine := view.RenderUnit(m.unit(), cw, &view.Cursor{Typed: m.typed, WholeBlock: m.sel != scopeSentence}, false)
 	cur = m.withGutter(m.cur, cur)
 
 	// Keep the cursor about a third of the way down the screen, then move the

@@ -23,9 +23,8 @@ type runKey struct {
 
 // Cursor is the typing state of the current unit.
 type Cursor struct {
-	Typed         []rune
-	CaseSensitive bool
-	WholeBlock    bool // underline the whole block rather than the sentence
+	Typed      []rune
+	WholeBlock bool // underline the whole block rather than the sentence
 }
 
 // textWidth is the room left for u's cells at content width w, after the
@@ -115,7 +114,7 @@ func RenderUnit(u *markdown.Unit, w int, c *Cursor, done bool) (lines []string, 
 		case !current:
 			return theme.Pending
 		case i < len(typed):
-			if u.Cells[i].Skip || markdown.Matches(typed[i], u.Cells[i].R, c.CaseSensitive) {
+			if u.Cells[i].Skip || markdown.Matches(typed[i], u.Cells[i].R) {
 				return theme.Done
 			}
 			return theme.Wrong
