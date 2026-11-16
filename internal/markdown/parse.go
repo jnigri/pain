@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -63,6 +64,7 @@ type Unit struct {
 	Ordered   bool   // prefix is a number rather than a bullet
 	Quote     int    // blockquote depth
 	Image     string // for an Image, the file to show; Cells hold its alt text
+	Line      int    // the source line the unit starts on, from 1
 }
 
 func (u *Unit) Typeable() bool {
@@ -90,6 +92,8 @@ type builder struct {
 	src   []byte
 	dir   string
 	units []Unit
+	line  int   // the source line of the block being added
+	nl    []int // the offset of each newline in src
 }
 
 func Parse(src []byte) []Unit { return ParseIn(src, "") }
@@ -99,7 +103,12 @@ func Parse(src []byte) []Unit { return ParseIn(src, "") }
 func ParseIn(src []byte, dir string) []Unit {
 	md := goldmark.New(goldmark.WithExtensions(extension.GFM))
 	doc := md.Parser().Parse(text.NewReader(src))
-	b := &builder{src: src, dir: dir}
+	b := &builder{src: src, dir: dir, line: 1}
+	for i, c := range src {
+		if c == '\n' {
+			b.nl = append(b.nl, i)
+		}
+	}
 	b.blocks(doc, ctx{})
 	for len(b.units) > 0 && b.units[len(b.units)-1].Kind == Spacer {
 		b.units = b.units[:len(b.units)-1]
@@ -109,6 +118,7 @@ func ParseIn(src []byte, dir string) []Unit {
 
 func (b *builder) add(u Unit, c ctx) {
 	u.Indent, u.Quote, u.Prefix, u.ListDepth, u.Ordered = c.indent, c.quote, c.prefix, c.listDepth, c.ordered
+	u.Line = b.line
 	b.units = append(b.units, u)
 }
 
@@ -116,7 +126,32 @@ func (b *builder) spacer(c ctx) {
 	if len(b.units) == 0 || b.units[len(b.units)-1].Kind == Spacer {
 		return
 	}
-	b.units = append(b.units, Unit{Kind: Spacer, Quote: c.quote})
+	b.units = append(b.units, Unit{Kind: Spacer, Quote: c.quote, Line: b.line})
+}
+
+// lineAt is the line, from 1, that byte offset off of the source is on.
+func (b *builder) lineAt(off int) int {
+	return sort.SearchInts(b.nl, off) + 1
+}
+
+// startLine is the line where n's first text is, or 0 when it has none.
+func (b *builder) startLine(n ast.Node) int {
+	line := 0
+	_ = ast.Walk(n, func(c ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		if c.Type() == ast.TypeBlock && c.Lines().Len() > 0 {
+			line = b.lineAt(c.Lines().At(0).Start)
+			return ast.WalkStop, nil
+		}
+		if t, ok := c.(*ast.Text); ok {
+			line = b.lineAt(t.Segment.Start)
+			return ast.WalkStop, nil
+		}
+		return ast.WalkContinue, nil
+	})
+	return line
 }
 
 func (b *builder) blocks(n ast.Node, c ctx) {
@@ -131,6 +166,9 @@ func (b *builder) blocks(n ast.Node, c ctx) {
 }
 
 func (b *builder) block(n ast.Node, c ctx) {
+	if l := b.startLine(n); l > 0 {
+		b.line = l
+	}
 	switch n := n.(type) {
 	case *ast.Heading:
 		b.add(Unit{Kind: Heading, Level: n.Level, Cells: skipNumbering(tidy(b.inlines(n, 0)))}, c)
@@ -177,6 +215,7 @@ func (b *builder) block(n ast.Node, c ctx) {
 		lines := n.Lines()
 		for i := 0; i < lines.Len(); i++ {
 			seg := lines.At(i)
+			b.line = b.lineAt(seg.Start)
 			line := strings.TrimRight(string(seg.Value(b.src)), "\r\n")
 			line = strings.ReplaceAll(line, "\t", "    ")
 			cs := Cells(line, 0, false)

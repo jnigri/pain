@@ -74,20 +74,31 @@ func (a *app) back(n *browser.Node, finished bool) {
 }
 
 func (a *app) open(n *browser.Node) tea.Cmd {
-	units, src, ok, err := markdown.Load(n.Path, n.Frag)
-	if err != nil || !ok {
+	units, src, err := markdown.Load(n.Path)
+	if err != nil {
+		return nil
+	}
+	from, to, ok := markdown.Part(units, n.Frag)
+	if !ok {
 		return nil
 	}
 	a.opened = n
 	a.b.Last = n.Key
 	store.SaveLastFile(a.root, n.Key)
-	m := reader.New(n.Key, src, units, store.LoadProgress(n.Key, len(units)), store.LoadPrefs())
+	var m *reader.Model
+	if from == 0 && to == len(units) {
+		m = reader.New(n.Path, src, units, store.LoadProgress(n.Path, len(units)), store.LoadPrefs())
+	} else {
+		// Part of the file, from a reading plan.
+		start := store.LoadPart(n.Path, len(units), from, to) - from
+		m = reader.NewPart(n.Key, n.Path, src, units, from, to, start, store.LoadPrefs())
+	}
 	if m.Finished {
 		// Nothing to type in it.
 		a.back(n, true)
 		return nil
 	}
-	m.Folder, m.Scope, m.File = true, a.root, n.Path
+	m.Folder, m.Scope = true, a.root
 	m.Update(tea.WindowSizeMsg{Width: a.w, Height: a.h})
 	a.doc = m
 	return m.Init()

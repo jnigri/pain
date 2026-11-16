@@ -49,10 +49,14 @@ type cached struct {
 }
 
 type Model struct {
-	// What progress, questions and asks are saved under: the file's path,
-	// with "#part" when only part of it is read, from a reading plan.
-	Path     string
-	File     string // the file read, when Path names part of it
+	// What questions and asks are saved under: the file's path, with
+	// "#part" when only part of it is read, from a reading plan.
+	Path string
+	File string // the file read, when Path names part of it
+	// Reading units [from, from+len(units)) of a file of total units: what
+	// is read is saved for the whole file, so the folder and every plan
+	// share it. total is 0 when the whole file is read.
+	part     struct{ from, total int }
 	src      []byte
 	units    []markdown.Unit
 	cur      int
@@ -103,7 +107,7 @@ func closeDoc(finished bool) tea.Cmd {
 // leave saves where you are and how fast you typed.
 func (m *Model) leave() {
 	if !m.Finished {
-		store.SaveProgress(m.Path, m.cur, len(m.units))
+		m.saveProgress()
 	}
 	store.AddStats(m.Path, m.tally())
 	m.words, m.typedSecs, m.wordAt, m.sess = 0, 0, nil, store.Tally{}
@@ -135,7 +139,23 @@ func (m *Model) FilePath() string {
 }
 
 func New(path string, src []byte, units []markdown.Unit, start int, p store.Prefs) *Model {
+	return newModel(path, src, units, start, p, nil)
+}
+
+// NewPart reads units [from, to) of file, a reading plan's row: key is what
+// its questions and asks are saved under, start where to begin in the part.
+func NewPart(key, file string, src []byte, all []markdown.Unit, from, to, start int, p store.Prefs) *Model {
+	return newModel(key, src, all[from:to], start, p, func(m *Model) {
+		m.File = file
+		m.part.from, m.part.total = from, len(all)
+	})
+}
+
+func newModel(path string, src []byte, units []markdown.Unit, start int, p store.Prefs, setup func(*Model)) *Model {
 	m := &Model{Path: path, src: src, units: units, cache: map[int]cached{}, prefs: p, secs: splitSections(units), hold: hold.New(holdDelay)}
+	if setup != nil {
+		setup(m)
+	}
 	m.countTotal()
 	m.loadAsked()
 	m.cur = start - 1
@@ -445,12 +465,26 @@ func (m *Model) next() {
 	for m.cur++; m.cur < len(m.units); m.cur++ {
 		if m.needsTyping(m.cur) {
 			m.autoSkip()
-			store.SaveProgress(m.Path, m.cur, len(m.units))
+			m.saveProgress()
 			return
 		}
 	}
 	m.Finished = true
-	store.MarkDone(m.Path, len(m.units))
+	if m.part.total > 0 {
+		store.MarkRead(m.File, m.part.total, m.part.from, m.part.from+len(m.units))
+	} else {
+		store.MarkDone(m.Path, len(m.units))
+	}
+}
+
+// saveProgress saves where you are: in a part of a file, as the units of the
+// file read up to there.
+func (m *Model) saveProgress() {
+	if m.part.total > 0 {
+		store.MarkRead(m.File, m.part.total, m.part.from, m.part.from+m.cur)
+		return
+	}
+	store.SaveProgress(m.Path, m.cur, len(m.units))
 }
 
 func (m *Model) prev() {

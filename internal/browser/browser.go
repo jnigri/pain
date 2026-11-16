@@ -39,11 +39,13 @@ type Node struct {
 	depth   int             // the row's nesting in the outline
 	items   []*Node         // a plan's or group's rows to read
 	desc    []markdown.Unit // a plan's description
-	// Files only.
-	units  []markdown.Unit
-	stats  fileStats
-	pos    store.Position
-	hasPos bool
+	// Files only. A plan's row may read only units [from, to) of the file;
+	// what is read is shared with every row and entry for the same file.
+	units    []markdown.Unit
+	from, to int
+	stats    fileStats
+	pos      store.Position
+	covered  store.Ranges // the units of the file read
 	// Words read and in total, and files done and in total. Folders sum
 	// their children.
 	read, total int
@@ -81,7 +83,7 @@ func Scan(path string, parent *Node) (*Node, error) {
 			continue
 		}
 		units := markdown.ParseIn(src, filepath.Dir(p))
-		n.kids = append(n.kids, &Node{name: name, Path: p, Key: p, parent: n, units: units, stats: newFileStats(units)})
+		n.kids = append(n.kids, &Node{name: name, Path: p, Key: p, parent: n, units: units, to: len(units), stats: newFileStats(units)})
 	}
 	return n, nil
 }
@@ -112,10 +114,12 @@ func planNode(pl plan.Plan, root *Node) *Node {
 		up = up[:min(len(up), it.Depth)]
 		if it.Group() {
 			k.group = true
-		} else if units, _, ok, err := markdown.Load(it.Path, it.Frag); err != nil || !ok {
+		} else if units, _, err := markdown.Load(it.Path); err != nil {
+			k.missing = true
+		} else if from, to, ok := markdown.Part(units, it.Frag); !ok {
 			k.missing = true
 		} else {
-			k.units, k.stats = units, newFileStats(units)
+			k.units, k.from, k.to, k.stats = units, from, to, newFileStats(units)
 			p.items = append(p.items, k)
 			for _, g := range up {
 				g.items = append(g.items, k)
@@ -151,10 +155,14 @@ func (n *Node) refresh(all map[string]store.Position, scores map[string]store.Fi
 	}
 	if !n.dir && !n.group {
 		n.score = scores[n.Key].Sum()
-		n.pos, n.hasPos = all[n.Key]
-		n.read, n.total = n.stats.read(n.pos, n.hasPos), n.stats.total()
+		// What is read is saved per file, whatever it was read from.
+		n.pos, n.covered = store.Position{}, nil
+		if p, ok := all[n.Path]; ok && p.Total == n.stats.units() {
+			n.pos, n.covered = p, p.Covered()
+		}
+		n.read, n.total = n.stats.read(n.covered, n.from, n.to), n.stats.in(n.from, n.to)
 		n.done, n.files = 0, 1
-		if n.hasPos && n.pos.Done {
+		if n.covered.Has(n.from, n.to) && n.from < n.to {
 			n.done = 1
 		}
 		return
@@ -362,10 +370,17 @@ func (b *Model) Update(msg tea.KeyMsg) (open *Node, quit bool) {
 		}
 	case "x":
 		if s := b.selected(); s != nil && s.readable() {
-			if s.done > 0 {
-				store.ClearProgress(s.Key)
-			} else {
-				store.MarkDone(s.Key, s.stats.units())
+			total := s.stats.units()
+			whole := s.from == 0 && s.to == total
+			switch {
+			case s.done > 0 && whole:
+				store.ClearProgress(s.Path)
+			case s.done > 0:
+				store.ClearRead(s.Path, total, s.from, s.to)
+			case whole:
+				store.MarkDone(s.Path, total)
+			default:
+				store.MarkRead(s.Path, total, s.from, s.to)
 			}
 			b.Refresh()
 		}
@@ -630,12 +645,17 @@ func (b *Model) preview(n *Node, w, h int) []string {
 		status += " · questions " + scoreText(n.score)
 	}
 	lines = append(lines, theme.Fg(theme.Muted).Render(status), "")
-	at := 0
-	if n.hasPos && !n.pos.Done && n.read > 0 {
-		at = n.pos.Unit
+	// From where reading carries on: where you stopped in the file, or the
+	// first unit of the part not read yet.
+	at := n.from
+	if n.read > 0 && n.done == 0 {
+		at = n.covered.FirstGap(n.from, n.to)
+		if n.from == 0 && n.to == n.stats.units() && n.pos.Unit > 0 {
+			at = n.pos.Unit
+		}
 	}
-	for i := max(at-2, 0); i < len(n.units) && len(lines) < h; i++ {
-		ul, _ := view.RenderUnit(&n.units[i], w, nil, i < at || n.done > 0)
+	for i := max(at-2, n.from); i < n.to && len(lines) < h; i++ {
+		ul, _ := view.RenderUnit(&n.units[i], w, nil, n.covered.Has(i, i+1))
 		lines = append(lines, ul...)
 	}
 	return padColumn(lines, h)

@@ -34,7 +34,8 @@ func Check(w io.Writer, root string) int {
 			if it.Frag != "" {
 				target += "#" + it.Frag
 			}
-			units, _, ok, err := markdown.Load(it.Path, it.Frag)
+			units, _, err := markdown.Load(it.Path)
+			from, to, ok := markdown.Part(units, it.Frag)
 			switch {
 			case err != nil:
 				bad++
@@ -44,7 +45,7 @@ func Check(w io.Writer, root string) int {
 				rows = append(rows, fmt.Sprintf("  %s\n      MISSING %s: %s", lead, target, why(it)))
 			default:
 				words := 0
-				for i := range units {
+				for i := from; i < to; i++ {
 					words += markdown.Words(&units[i])
 				}
 				total += words
@@ -75,11 +76,11 @@ func why(it Item) string {
 	if _, _, isRange := markdown.LineRange(it.Frag); isRange || !markdown.IsMarkdown(it.Path) {
 		return "no such lines, or not a line range (#L10-L40)"
 	}
-	src, err := os.ReadFile(it.Path)
+	units, _, err := markdown.Load(it.Path)
 	if err != nil {
 		return err.Error()
 	}
-	anchors := markdown.Anchors(markdown.Parse(src))
+	anchors := markdown.Anchors(units)
 	return "no heading with that anchor; the file has: " + strings.Join(anchors, ", ")
 }
 

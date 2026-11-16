@@ -114,10 +114,14 @@ How to write one, the anchors and line ranges a row can point at, and
 [Writing a reading plan](reading-plans.md). A row that is not found is marked
 `missing` and does not open.
 
-A row that reads a whole file shares its progress with that file in the
-folder. A row that reads part of a file keeps its own progress, saved as
-`path#anchor`, and so do its questions and conversations. Plans do not count
-in the folder's totals, since they only point at its files.
+What you read is saved per file, wherever you read it from, so the folder
+and every plan agree. Reading a section from a plan counts toward that file
+in the folder, and reading the file ticks every row that points at part of
+it, in every plan. A row that reads part of a file opens at the first block
+of that part you have not read. `x` on such a row marks only that part read
+or unread. The questions and conversations of a row that reads part of a
+file are its own, saved under `path#anchor`. Plans do not count in the
+folder's totals, since they only point at its files.
 
 ### What you type
 
@@ -381,7 +385,7 @@ Press `ctrl+p` to change preferences. They save straight away to
 | File                                         | Content                                  |
 |----------------------------------------------|------------------------------------------|
 | `~/.config/pain/config.json`                 | preferences                              |
-| `<user cache dir>/pain/progress.json`        | the block you stopped at, per file (or per part of a file, `path#anchor`, read from a reading plan), or that you read it to the end. On macOS the cache dir is `~/Library/Caches`, on Linux `~/.cache`. |
+| `<user cache dir>/pain/progress.json`        | per file, the block you stopped at and the blocks you have read, whether in the file itself or in a reading plan's row for part of it. On macOS the cache dir is `~/Library/Caches`, on Linux `~/.cache`. |
 | `<user cache dir>/pain/folders.json`         | the file you opened last, per folder.    |
 | `<user cache dir>/pain/stats.json`           | words typed, time spent typing, top speed, questions answered and explanations written, in total and per file, for the time left and the stats in the folder view. Pauses over 10 seconds count as 10. |
 | `<user cache dir>/pain/asks.json`            | every conversation started with `ctrl+a`, per file, saved after each answer. Cancelled and failed questions are not kept. |
@@ -520,5 +524,3 @@ text, and `theme.Surface()` / `theme.Edge()` for backgrounds and borders.
 - Code blocks have no syntax highlighting.
 - Line breaks inside a paragraph become a single space.
 - Very wide tables wrap instead of scrolling.
-- Reading a section of a file from a plan does not count toward that file in
-  the folder, and reading the file does not tick its sections in the plan.

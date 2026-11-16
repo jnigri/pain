@@ -9,12 +9,94 @@ import (
 	"path/filepath"
 )
 
-// Progress is a map of absolute file path to the unit you stopped at. The
-// unit count guards against resuming into a file that has changed.
+// Progress is a map of absolute file path to the unit you stopped at and
+// the units read, wherever they were read from: the file itself or a reading
+// plan's row for part of it. The unit count guards against resuming into a
+// file that has changed.
 type Position struct {
-	Unit  int  `json:"unit"`
-	Total int  `json:"total"`
-	Done  bool `json:"done,omitempty"` // read to the end; reopening starts at the top
+	Unit  int    `json:"unit"`
+	Total int    `json:"total"`
+	Done  bool   `json:"done,omitempty"` // every unit read; finishing the file starts it again at the top
+	Read  Ranges `json:"read,omitempty"`
+}
+
+// Ranges are the units read, as sorted [from, to) pairs that do not touch.
+type Ranges [][2]int
+
+// Covered is the ranges read, including those of positions saved before
+// pain kept them: everything before the unit you stopped at.
+func (p Position) Covered() Ranges {
+	switch {
+	case p.Done:
+		return Ranges{{0, p.Total}}
+	case p.Read == nil && p.Unit > 0:
+		return Ranges{{0, p.Unit}}
+	}
+	return p.Read
+}
+
+// Add is r with [from, to) read too.
+func (r Ranges) Add(from, to int) Ranges {
+	if from >= to {
+		return r
+	}
+	var out Ranges
+	for _, x := range r {
+		switch {
+		case x[1] < from:
+			out = append(out, x)
+		case x[0] > to:
+			if from < to {
+				out = append(out, [2]int{from, to})
+				from, to = 0, 0
+			}
+			out = append(out, x)
+		default:
+			from, to = min(from, x[0]), max(to, x[1])
+		}
+	}
+	if from < to {
+		out = append(out, [2]int{from, to})
+	}
+	return out
+}
+
+// Remove is r with [from, to) not read.
+func (r Ranges) Remove(from, to int) Ranges {
+	var out Ranges
+	for _, x := range r {
+		if x[0] < from {
+			out = append(out, [2]int{x[0], min(x[1], from)})
+		}
+		if x[1] > to {
+			out = append(out, [2]int{max(x[0], to), x[1]})
+		}
+	}
+	return out
+}
+
+// Has tells whether every unit of [from, to) is read.
+func (r Ranges) Has(from, to int) bool {
+	for _, x := range r {
+		if x[0] <= from && to <= x[1] {
+			return true
+		}
+	}
+	return from >= to
+}
+
+// FirstGap is the first unit of [from, to) not read, or from when all are.
+func (r Ranges) FirstGap(from, to int) int {
+	at := from
+	for _, x := range r {
+		if x[0] <= at && at < x[1] {
+			at = x[1]
+		}
+	}
+	if at >= to {
+		return from
+	}
+	return at
 }
 
 // CachePath is where pain keeps its state files, such as progress.json.
@@ -68,21 +150,68 @@ func writeProgress(all map[string]Position) { writeCache("progress.json", all) }
 
 func LoadProgress(path string, total int) int {
 	p, ok := ReadProgress()[path]
-	if !ok || p.Done || p.Total != total || p.Unit >= total {
+	if !ok || p.Total != total || p.Unit >= total {
 		return 0
 	}
 	return p.Unit
 }
 
-func SaveProgress(path string, unit, total int) {
-	all := ReadProgress()
-	all[path] = Position{Unit: unit, Total: total}
-	writeProgress(all)
+// LoadPart is where to start reading units [from, to) of a file: the first
+// one not read yet, or from when all are.
+func LoadPart(path string, total, from, to int) int {
+	p, ok := ReadProgress()[path]
+	if !ok || p.Total != total {
+		return from
+	}
+	return p.Covered().FirstGap(from, to)
 }
 
+// SaveProgress saves where you stopped in a file, and counts everything
+// before it as read.
+func SaveProgress(path string, unit, total int) {
+	update(path, total, func(p *Position) {
+		p.Unit = unit
+		p.Read = p.Read.Add(0, unit)
+	})
+}
+
+// MarkDone counts the whole file as read; opening it again starts at the
+// top.
 func MarkDone(path string, total int) {
+	update(path, total, func(p *Position) {
+		p.Unit = 0
+		p.Read = p.Read.Add(0, total)
+	})
+}
+
+// MarkRead counts units [from, to) of a file as read, as reading a part of
+// it from a reading plan does.
+func MarkRead(path string, total, from, to int) {
+	update(path, total, func(p *Position) { p.Read = p.Read.Add(from, to) })
+}
+
+// ClearRead counts units [from, to) of a file as not read.
+func ClearRead(path string, total, from, to int) {
+	update(path, total, func(p *Position) {
+		p.Read = p.Read.Remove(from, to)
+		if p.Unit > from {
+			p.Unit = from
+		}
+	})
+}
+
+// update changes a file's position, starting afresh when the file has
+// changed shape, and keeps Done in step with what is read.
+func update(path string, total int, fn func(*Position)) {
 	all := ReadProgress()
-	all[path] = Position{Total: total, Done: true}
+	p, ok := all[path]
+	if !ok || p.Total != total {
+		p = Position{Total: total}
+	}
+	p.Read, p.Done = p.Covered(), false
+	fn(&p)
+	p.Done = p.Read.Has(0, total)
+	all[path] = p
 	writeProgress(all)
 }
 

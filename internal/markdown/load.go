@@ -15,38 +15,47 @@ func IsMarkdown(path string) bool {
 }
 
 // Load reads a file and parses it. A Markdown file is parsed as such; any
-// other file is shown as one code block named after its extension. frag
-// picks part of it: a heading anchor ("applications") for Markdown, or a line
-// range ("L10-L40") for any file. ok is false when frag matches nothing.
-func Load(path, frag string) (units []Unit, src []byte, ok bool, err error) {
+// other file is shown as one code block named after its extension.
+func Load(path string) (units []Unit, src []byte, err error) {
 	src, err = os.ReadFile(path)
 	if err != nil {
-		return nil, nil, false, err
-	}
-	text := src
-	from, to, ranged := LineRange(frag)
-	if ranged {
-		lines := strings.SplitAfter(string(src), "\n")
-		if from > len(lines) {
-			return nil, src, false, nil
-		}
-		text = []byte(strings.Join(lines[from-1:min(to, len(lines))], ""))
+		return nil, nil, err
 	}
 	if !IsMarkdown(path) {
-		return Code(text, strings.TrimPrefix(filepath.Ext(path), ".")), src, true, nil
+		return Code(src, strings.TrimPrefix(filepath.Ext(path), ".")), src, nil
 	}
-	units = ParseIn(text, filepath.Dir(path))
-	if frag == "" || ranged {
-		return units, src, true, nil
-	}
-	a, b, found := Section(units, frag)
-	if !found {
-		return nil, src, false, nil
-	}
-	return units[a:b], src, true, nil
+	return ParseIn(src, filepath.Dir(path)), src, nil
 }
 
-// Code parses src as one code block in language lang.
+// Part finds the units [from, to) a fragment picks: a heading anchor
+// ("applications") or a line range ("L10-L40"). No fragment picks them all.
+// ok is false when frag matches nothing.
+func Part(units []Unit, frag string) (from, to int, ok bool) {
+	if frag == "" {
+		return 0, len(units), true
+	}
+	first, last, ranged := LineRange(frag)
+	if !ranged {
+		return Section(units, frag)
+	}
+	from, to = len(units), len(units)
+	for i, u := range units {
+		if u.Line >= first && from == len(units) && u.Kind != Spacer {
+			from = i
+		}
+		if u.Line > last {
+			to = i
+			break
+		}
+	}
+	for to > from && units[to-1].Kind == Spacer {
+		to--
+	}
+	return from, to, from < to
+}
+
+// Code parses src as one code block in language lang. Each line keeps its
+// line number; the language label has none.
 func Code(src []byte, lang string) []Unit {
 	s := strings.TrimRight(string(src), "\n")
 	// The fence must be longer than any run of backticks in the code.
@@ -60,7 +69,14 @@ func Code(src []byte, lang string) []Unit {
 		}
 	}
 	fence := strings.Repeat("`", max(3, longest+1))
-	return Parse([]byte(fmt.Sprintf("%s%s\n%s\n%s\n", fence, lang, s, fence)))
+	units := Parse([]byte(fmt.Sprintf("%s%s\n%s\n%s\n", fence, lang, s, fence)))
+	for i := range units {
+		units[i].Line-- // the fence line comes first
+	}
+	if lang != "" && len(units) > 0 {
+		units[0].Line = 0
+	}
+	return units
 }
 
 // LineRange reads a fragment such as "L10-L40" or "L10", lines counted

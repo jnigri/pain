@@ -95,9 +95,9 @@ func TestLoad(t *testing.T) {
 		return p
 	}
 	yaml := write("app.yaml", "kind: Application\nspec:\n  # ```\n  project: default\n")
-	units, _, ok, err := Load(yaml, "")
-	if err != nil || !ok {
-		t.Fatal(ok, err)
+	units, _, err := Load(yaml)
+	if err != nil {
+		t.Fatal(err)
 	}
 	var code []string
 	for _, u := range units {
@@ -109,24 +109,39 @@ func TestLoad(t *testing.T) {
 	if want := "yaml|kind: Application|spec:|  # ```|  project: default"; strings.Join(code, "|") != want {
 		t.Errorf("code %q", code)
 	}
-
-	units, _, ok, _ = Load(yaml, "L2-L3")
-	if !ok || len(units) != 3 || str(units[1].Cells) != "spec:" {
-		t.Errorf("range: %v %d", ok, len(units))
+	from, to, ok := Part(units, "L2-L3")
+	if !ok || from != 2 || to != 4 || str(units[from].Cells) != "spec:" {
+		t.Errorf("range: %v %d-%d", ok, from, to)
 	}
-	if _, _, ok, _ := Load(yaml, "L9"); ok {
+	if from, to, ok := Part(units, "L1"); !ok || from != 1 || to != 2 {
+		t.Errorf("one line: %v %d-%d", ok, from, to)
+	}
+	if _, _, ok := Part(units, "L9"); ok {
 		t.Error("a range past the end was found")
 	}
 
-	md := write("doc.md", "# Doc\n\n## One\n\nfirst\n\n## Two\n\nsecond\n")
-	units, _, ok, _ = Load(md, "two")
-	if !ok || strings.Join(headings(units), "|") != "Two" {
-		t.Errorf("section: %v %q", ok, headings(units))
+	md := write("doc.md", "# Doc\n\n## One\n\nfirst\n\n## Two\n\nsecond\nstill second\n\n- third\n")
+	units, _, _ = Load(md)
+	from, to, ok = Part(units, "two")
+	if !ok || strings.Join(headings(units[from:to]), "|") != "Two" {
+		t.Errorf("section: %v %q", ok, headings(units[from:to]))
 	}
-	if _, _, ok, _ := Load(md, "three"); ok {
+	if _, _, ok := Part(units, "three"); ok {
 		t.Error("an unknown anchor was found")
 	}
-	if _, _, _, err := Load(filepath.Join(dir, "none.md"), ""); err == nil {
+	// Lines pick the blocks that start in them, whole.
+	from, to, ok = Part(units, "L9-L11")
+	var got []string
+	for _, u := range units[from:to] {
+		got = append(got, str(u.Cells))
+	}
+	if !ok || strings.Join(got, "|") != "second still second" {
+		t.Errorf("lines: %v %q", ok, got)
+	}
+	if from, to, _ := Part(units, ""); from != 0 || to != len(units) {
+		t.Error("no fragment is not the whole file")
+	}
+	if _, _, err := Load(filepath.Join(dir, "none.md")); err == nil {
 		t.Error("a missing file loaded")
 	}
 }
