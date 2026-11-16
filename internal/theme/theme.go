@@ -223,8 +223,10 @@ func CellStyle(u *markdown.Unit, f markdown.Attr, st State) lipgloss.Style {
 	case markdown.CodeLine:
 		bg = Surface()
 	}
+	// Quotes are told apart by their bars and italics, not by a muted color,
+	// so what is typed of them lights up like any other text.
 	if u.Quote > 0 && u.Kind != markdown.CodeLine {
-		fg, ital = Muted, true
+		ital = true
 	}
 	if f&markdown.Bold != 0 {
 		bold = true
