@@ -53,6 +53,12 @@ func TestSinglePressNeverCompletes(t *testing.T) {
 	if done, _ := h.Update(h.tickMsg()); done || h.Running() {
 		t.Error("a single press still holds")
 	}
+	if !h.Tapped() {
+		t.Error("a single press is not a tap")
+	}
+	if h.Repeat("down"); h.Tapped() {
+		t.Error("another key does not end the tap")
+	}
 }
 
 func TestLetGoIsSeenFromThePace(t *testing.T) {
@@ -117,5 +123,16 @@ func TestUnderline(t *testing.T) {
 	}
 	if strings.Contains(Underline(line, 5, 15, 1, DefaultLook), "\x1b[4:4m") {
 		t.Error("a track when full")
+	}
+}
+
+func TestHint(t *testing.T) {
+	got := Hint("› \x1b[1mYes\x1b[0m      ", 20, "hold")
+	if plain := ansi.Strip(got); plain != "› Yes           hold" {
+		t.Errorf("got %q", plain)
+	}
+	long := "› " + strings.Repeat("x", 16)
+	if Hint(long, 20, "hold") != long {
+		t.Error("a hint without room changes the line")
 	}
 }

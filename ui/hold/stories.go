@@ -97,6 +97,18 @@ func (m *choices) note(f string, a ...any) {
 	}
 }
 
+// hint says how to answer, by the choice selected.
+func (m *choices) hint() string {
+	yellow := lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	switch {
+	case m.hold.Running():
+		return yellow.Render("keep holding")
+	case m.hold.Tapped():
+		return yellow.Render("hold the key to answer")
+	}
+	return lipgloss.NewStyle().Faint(true).Render("hold to answer")
+}
+
 func (m *choices) View() string {
 	const width = 60
 	dim := lipgloss.NewStyle().Faint(true)
@@ -112,8 +124,11 @@ func (m *choices) View() string {
 			mark, st = "› ", bold
 		}
 		lead := mark + dim.Render(fmt.Sprintf("%d  ", i+1))
-		for _, l := range strings.Split(st.Width(width-5).Render(it), "\n") {
+		for k, l := range strings.Split(st.Width(width-5).Render(it), "\n") {
 			line := lead + l
+			if m.picked < 0 && i == m.sel && k == 0 {
+				line = Hint(line, width, m.hint())
+			}
 			if m.hold.Running() && i == m.sel {
 				line = Underline(line, 5, width, m.hold.Progress(), DefaultLook)
 			}

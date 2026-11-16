@@ -300,6 +300,8 @@ questions. pain remembers the one you used last.
   and keep the key held: the choice underlines from the left as you hold, and
   the answer counts once the underline is full, after a second. Letting go
   before, or `esc`, takes it back, so a key hit by mistake does not answer.
+  The selected choice says so at its right: `hold to answer`, `keep holding`
+  while you do, and `hold the key to answer` after a tap.
   Terminals do not tell when a key is let go, so pain watches the key repeat,
   and learns its pace: the underline goes about a tenth of a second after you
   let go. With key repeat turned off in the system settings, no answer counts.

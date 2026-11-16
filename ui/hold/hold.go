@@ -89,6 +89,10 @@ func (h *Hold) Cancel() {
 // Running tells whether a key is being held.
 func (h *Hold) Running() bool { return h.running }
 
+// Tapped tells whether the last key let go before its first repeat: a tap,
+// which never confirms, worth a word on holding instead.
+func (h *Hold) Tapped() bool { return h.lapsed }
+
 // Key is the key being held, or that was last.
 func (h *Hold) Key() string { return h.key }
 

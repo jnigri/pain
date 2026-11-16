@@ -105,6 +105,17 @@ func (m *Model) arm(pick int, key string) tea.Cmd {
 	return m.hold.Start(key)
 }
 
+// holdHint is the word by the selected choice on how to answer it.
+func (m *Model) holdHint() string {
+	switch {
+	case m.hold.Running():
+		return theme.Fg(theme.Yellow).Render("keep holding")
+	case m.hold.Tapped():
+		return theme.Fg(theme.Yellow).Render("hold the key to answer")
+	}
+	return theme.Fg(theme.Muted).Render("hold to answer")
+}
+
 // holdEvent moves the hold of a choice, and answers once it is complete.
 func (m *Model) holdEvent(msg hold.TickMsg) tea.Cmd {
 	done, cmd := m.hold.Update(msg)
@@ -566,6 +577,9 @@ func (m *Model) quizView() string {
 			}
 			lead := mark + theme.Fg(theme.Muted).Render(fmt.Sprintf("%d  ", i+1))
 			chl := wrapped(st, ch, cw, lead)
+			if q.picked < 0 && i == q.sel {
+				chl[0] = hold.Hint(chl[0], cw, m.holdHint())
+			}
 			// The choice being held underlines as the key is held.
 			if m.hold.Running() && q.picked < 0 && i == q.sel {
 				for k, l := range chl {
