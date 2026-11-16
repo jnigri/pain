@@ -428,24 +428,6 @@ func (m *Model) prevSection() {
 	m.autoSkip()
 }
 
-// toCheckpoint is the words left to type before the section ends.
-func (m *Model) toCheckpoint() int {
-	n, in := 0, false
-	for _, c := range m.unit().Cells[len(m.typed):] {
-		w := !c.Skip && markdown.IsAlnum(c.R)
-		if w && !in {
-			n++
-		}
-		in = w
-	}
-	for i := m.cur + 1; i < m.secs[sectionOf(m.secs, m.cur)].end; i++ {
-		if m.needsTyping(i) {
-			n += markdown.Words(&m.units[i])
-		}
-	}
-	return n
-}
-
 // next moves to the following typeable unit, or finishes the document.
 func (m *Model) next() {
 	m.typed = m.typed[:0]
@@ -897,16 +879,9 @@ func (m *Model) header(cw int) string {
 	right := bar + theme.Fg(theme.Muted).Render(fmt.Sprintf(" %3d%%", pct))
 	left := theme.Fg(theme.Purple).Bold(true).Render(filepath.Base(m.Path))
 	if m.check != nil {
-		// The section the cursor is in. The checkpoint is only announced
-		// once it is close.
+		// The section the cursor is in.
 		at := fmt.Sprintf("  ◆ %d/%d", sectionOf(m.secs, m.cur)+1, len(m.secs))
 		more := theme.Fg(theme.Green).Render(at)
-		if n := m.toCheckpoint(); n <= nearCheckpoint {
-			soon := theme.Fg(theme.Yellow).Bold(true).Render(fmt.Sprintf("%s · checkpoint in %d", at, n))
-			if lipgloss.Width(left)+lipgloss.Width(soon)+lipgloss.Width(right) < cw {
-				more = soon
-			}
-		}
 		// The questions being written show until they are there.
 		if text, col := m.genStatus(); text != "" {
 			st := theme.Fg(col).Render(" · " + text)

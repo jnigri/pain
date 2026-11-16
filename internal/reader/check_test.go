@@ -97,9 +97,6 @@ func TestScopes(t *testing.T) {
 		t.Errorf("shift+tab selects %v, want the section", scopeNames[m.sel])
 	}
 
-	if got := m.toCheckpoint(); got != 304 {
-		t.Errorf("toCheckpoint = %d, want 304", got)
-	}
 	first := m.cur
 	m.nextSection()
 	if sectionOf(m.secs, m.cur) != 1 || m.units[m.cur].Kind != markdown.Heading {

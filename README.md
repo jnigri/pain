@@ -68,8 +68,8 @@ pain .           # browse a folder
 
 Press `ctrl+t` in a file, or `t` in the folder view, and pain remembers that
 this folder wants more from you. From then on, each section ends with a
-checkpoint. A line in the text shows where it comes, and the header counts down
-the last words before it. A checkpoint is one of two kinds:
+checkpoint. A line in the text shows where it comes, and the header shows the
+current section. A checkpoint is one of two kinds:
 
 - **Questions.** Claude writes a few multiple-choice questions per section the
   first time you open a file. You answer them and see why the right choice is

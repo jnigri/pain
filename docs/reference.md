@@ -284,9 +284,8 @@ questions`, marks where each section ends. While Claude writes the questions,
 the header shows how far it is, such as `writing questions 3/8 sections · 5 so
 far`, and the lines of the sections still waiting say so. If the questions
 could not be written, both say it, and `ctrl+g` opens the error with a key to
-try again. The header shows the section you are
-in, such as `◆ 2/5`. For the last 25 words of a section it turns yellow and
-counts them down: `◆ 2/5 · checkpoint in 12`. Once a checkpoint is passed, its line
+try again. The header shows the section you are in, such as `◆ 2/5`.
+Once a checkpoint is passed, its line
 shows how it went: `✔ 2 of 2 right`, `● 1 of 2 right`, `✔ explained` or
 `◇ checkpoint skipped`.
 

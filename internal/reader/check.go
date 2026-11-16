@@ -51,10 +51,6 @@ Keep it to a few sentences, and never ask more than one question at a time. When
 
 Answer in Markdown, in the language they write in.`
 
-// nearCheckpoint is the words left in a section under which the header
-// announces the checkpoint.
-const nearCheckpoint = 25
-
 // checks is the active reading state of a file.
 type checks struct {
 	quiz      [][]store.Question // per section, nil until written
