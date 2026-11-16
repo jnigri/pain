@@ -29,6 +29,11 @@ type it.
 - **Folders.** `pain DIR` lists your files with how much of each you have
   read, how its questions went, and about how long the rest takes at your
   speed. `s` shows what you typed and how fast.
+- **Reading plans.** A list in `.reading-plans/` says what to read in which
+  order, and why. It can point at one section of a long page or a few lines of
+  code, and pain takes you through it row by row. See
+  [Writing a reading plan](docs/reading-plans.md), or let Claude write one
+  with the `reading-plan` skill.
 - **Resume.** pain remembers where you stopped in every file.
 - **Ask Claude.** `ctrl+a` asks a question about the sentence, block or
   section you are on, and keeps the conversation next to it.

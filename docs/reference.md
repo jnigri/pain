@@ -48,10 +48,13 @@ pain samples/tour.md
 ```
 pain [-restart] FILE.md
 pain DIR
+pain -check DIR
 ```
 
 `pain` remembers where you stopped in each file and resumes there next time.
-`-restart` ignores the saved position and starts from the top.
+`-restart` ignores the saved position and starts from the top. `-check` prints
+the [reading plans](#reading-plans) of a folder row by row and exits with
+status 1 if a row is not found, without opening the interface.
 
 ### Reading a folder
 
@@ -59,7 +62,7 @@ pain DIR
 [mini.files](https://github.com/echasnovski/mini.files): the parent folder, the
 current folder and a preview of the selected entry, side by side. Only
 Markdown files and the folders that hold some are listed; hidden entries are
-left out.
+left out, apart from the [reading plans](#reading-plans).
 
 The header shows how much of the folder you have read, in words, how many
 files you have finished and, once pain has seen you type for a while, about how
@@ -85,15 +88,36 @@ you have not finished selected, so `enter` carries on.
 | Key                | Action                                  |
 |--------------------|-----------------------------------------|
 | `j` / `k`          | move the selection (`↓` / `↑` too)      |
-| `l` / `enter`      | open the folder or file (`→` too)       |
+| `l` / `enter`      | open the folder, plan or file (`→` too) |
 | `h` / `-`          | go up a folder (`←` too)                |
 | `g` / `G`          | go to the first / last entry            |
-| `n`                | select the next file not read yet       |
+| `n`                | select the next file not read yet; in a plan, its next row |
 | `r`                | reopen the last file you read           |
 | `x`                | mark the file read, or unread           |
 | `s`                | show the stats: words, speed, questions |
 | `t`                | turn active reading on or off for the folder |
 | `q` / `esc`        | quit                                    |
+
+### Reading plans
+
+Alphabetical order is rarely the order in which to learn a subject. A reading
+plan is an ordered list of what to read, with why. Each Markdown file in the
+folder's `.reading-plans/` is one plan. Plans are listed first in the folder
+view, marked `☰` and in their own color, and the preview shows the plan's
+description. `l` opens a plan: its rows are numbered as in the outline, and
+finishing a row goes back to the plan with its next row selected, so `enter`
+carries on. In a plan, `n` selects its next row not read yet, and the header
+shows the plan's progress instead of the folder's.
+
+How to write one, the anchors and line ranges a row can point at, and
+`pain -check DIR`, which checks a plan row by row, are in
+[Writing a reading plan](reading-plans.md). A row that is not found is marked
+`missing` and does not open.
+
+A row that reads a whole file shares its progress with that file in the
+folder. A row that reads part of a file keeps its own progress, saved as
+`path#anchor`, and so do its questions and conversations. Plans do not count
+in the folder's totals, since they only point at its files.
 
 ### What you type
 
@@ -357,7 +381,7 @@ Press `ctrl+p` to change preferences. They save straight away to
 | File                                         | Content                                  |
 |----------------------------------------------|------------------------------------------|
 | `~/.config/pain/config.json`                 | preferences                              |
-| `<user cache dir>/pain/progress.json`        | the block you stopped at, per file, or that you read it to the end. On macOS the cache dir is `~/Library/Caches`, on Linux `~/.cache`. |
+| `<user cache dir>/pain/progress.json`        | the block you stopped at, per file (or per part of a file, `path#anchor`, read from a reading plan), or that you read it to the end. On macOS the cache dir is `~/Library/Caches`, on Linux `~/.cache`. |
 | `<user cache dir>/pain/folders.json`         | the file you opened last, per folder.    |
 | `<user cache dir>/pain/stats.json`           | words typed, time spent typing, top speed, questions answered and explanations written, in total and per file, for the time left and the stats in the folder view. Pauses over 10 seconds count as 10. |
 | `<user cache dir>/pain/asks.json`            | every conversation started with `ctrl+a`, per file, saved after each answer. Cancelled and failed questions are not kept. |
@@ -389,13 +413,14 @@ components under `ui/` that any of them may use:
 
 | Package    | Role |
 |------------|------|
-| `markdown` | walks the goldmark AST and flattens it into units; character folding and matching, word wrapping, sentence bounds, word counts. Knows nothing about the terminal. |
+| `markdown` | walks the goldmark AST and flattens it into units; character folding and matching, word wrapping, sentence bounds, word counts; `Load` reads any file, other files as code, whole or one section or line range. Knows nothing about the terminal. |
 | `theme`    | colors from the terminal's palette, light/dark detection, and `CellStyle`, which maps a cell's style and typing state to a Lip Gloss style |
 | `picture`  | an image file to lines of text: sent to the terminal and shown through placeholder characters (Kitty graphics protocol), or drawn in half-block characters |
 | `store`    | state kept between runs: atomic JSON files for saved positions, last file per folder, typing and question stats, questions, scores and conversations, plus the preferences file |
 | `view`     | drawing shared by the screens: `RenderUnit` (one unit to styled lines, with the sentence underline) and the key help box |
 | `reader`   | the file view: key handling, typing rules, viewport, asking Claude (`ask.go` runs `claude -p` and reads its stream, `askview.go` draws it), active reading (`sections.go` cuts a file into sections, `check.go` holds the checkpoints and the explanations), the preferences and key screens |
-| `browser`  | the folder view: scanning the folder, the three columns, reading progress and scores per file, the stats screen |
+| `plan`     | reads the reading plans in a folder's `.reading-plans/`: title, description and the outline of rows to read |
+| `browser`  | the folder view: scanning the folder and its plans, the three columns, reading progress and scores per file, the stats screen |
 | `app`      | folder mode: switches between `browser` and `reader` |
 
 Under `ui/` are UI components that stand on their own: they know nothing of
@@ -495,3 +520,5 @@ text, and `theme.Surface()` / `theme.Edge()` for backgrounds and borders.
 - Code blocks have no syntax highlighting.
 - Line breaks inside a paragraph become a single space.
 - Very wide tables wrap instead of scrolling.
+- Reading a section of a file from a plan does not count toward that file in
+  the folder, and reading the file does not tick its sections in the plan.

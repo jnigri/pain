@@ -14,18 +14,31 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"pain/internal/markdown"
+	"pain/internal/plan"
 	"pain/internal/store"
 	"pain/internal/theme"
 	"pain/internal/view"
 )
 
-// Node is a Markdown file or a folder holding some, in the folder view.
+// Node is a Markdown file or a folder holding some, in the folder view. It is
+// also a reading plan, shown as a folder of rows, or one of its rows.
 type Node struct {
 	name   string
 	Path   string
+	Key    string // what progress is saved under: Path, or Path#Frag for part of a file
+	Frag   string // the part of the file read: a heading anchor or a line range
 	dir    bool
 	parent *Node
 	kids   []*Node
+	// Plans and their rows. A plan's kids are its rows, flat and in order.
+	plan    bool
+	group   bool            // a row that only gathers the rows under it
+	missing bool            // a row whose file or part is not found
+	num     string          // the row's place in the outline: "2.1"
+	note    string          // what the plan says about the row
+	depth   int             // the row's nesting in the outline
+	items   []*Node         // a plan's or group's rows to read
+	desc    []markdown.Unit // a plan's description
 	// Files only.
 	units  []markdown.Unit
 	stats  fileStats
@@ -68,16 +81,77 @@ func Scan(path string, parent *Node) (*Node, error) {
 			continue
 		}
 		units := markdown.ParseIn(src, filepath.Dir(p))
-		n.kids = append(n.kids, &Node{name: name, Path: p, parent: n, units: units, stats: newFileStats(units)})
+		n.kids = append(n.kids, &Node{name: name, Path: p, Key: p, parent: n, units: units, stats: newFileStats(units)})
 	}
 	return n, nil
 }
 
+// Load scans path and puts the reading plans in its .reading-plans/ first.
+func Load(path string) (*Node, error) {
+	root, err := Scan(path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var plans []*Node
+	for _, pl := range plan.Load(path) {
+		plans = append(plans, planNode(pl, root))
+	}
+	root.kids = append(plans, root.kids...)
+	return root, nil
+}
+
+func planNode(pl plan.Plan, root *Node) *Node {
+	p := &Node{name: pl.Title, Path: pl.File, Key: pl.File, dir: true, plan: true, parent: root, desc: pl.Desc}
+	var up []*Node // the rows above, one per depth
+	for _, it := range pl.Items {
+		k := &Node{name: it.Title, Path: it.Path, Key: it.Path, Frag: it.Frag, plan: true, parent: p,
+			num: it.Num, note: it.Note, depth: it.Depth}
+		if it.Frag != "" {
+			k.Key += "#" + it.Frag
+		}
+		up = up[:min(len(up), it.Depth)]
+		if it.Group() {
+			k.group = true
+		} else if units, _, ok, err := markdown.Load(it.Path, it.Frag); err != nil || !ok {
+			k.missing = true
+		} else {
+			k.units, k.stats = units, newFileStats(units)
+			p.items = append(p.items, k)
+			for _, g := range up {
+				g.items = append(g.items, k)
+			}
+		}
+		p.kids = append(p.kids, k)
+		up = append(up, k)
+	}
+	return p
+}
+
+// counted is what n sums: a folder leaves out the plans, which only
+// point at its files, and a plan or group counts the rows it can read.
+func (n *Node) counted() []*Node {
+	if n.plan {
+		return n.items
+	}
+	var out []*Node
+	for _, k := range n.kids {
+		if !k.plan {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+func (n *Node) readable() bool { return !n.dir && !n.group && !n.missing }
+
 // refresh recounts what is read from the saved positions.
 func (n *Node) refresh(all map[string]store.Position, scores map[string]store.FileScores) {
-	if !n.dir {
-		n.score = scores[n.Path].Sum()
-		n.pos, n.hasPos = all[n.Path]
+	if n.missing {
+		return
+	}
+	if !n.dir && !n.group {
+		n.score = scores[n.Key].Sum()
+		n.pos, n.hasPos = all[n.Key]
 		n.read, n.total = n.stats.read(n.pos, n.hasPos), n.stats.total()
 		n.done, n.files = 0, 1
 		if n.hasPos && n.pos.Done {
@@ -85,9 +159,19 @@ func (n *Node) refresh(all map[string]store.Position, scores map[string]store.Fi
 		}
 		return
 	}
-	n.read, n.total, n.done, n.files, n.score = 0, 0, 0, 0, store.Score{}
+	// A group's rows come after it: count them first.
 	for _, k := range n.kids {
-		k.refresh(all, scores)
+		if !k.group {
+			k.refresh(all, scores)
+		}
+	}
+	for _, k := range n.kids {
+		if k.group {
+			k.refresh(all, scores)
+		}
+	}
+	n.read, n.total, n.done, n.files, n.score = 0, 0, 0, 0, store.Score{}
+	for _, k := range n.counted() {
 		n.score.Right += k.score.Right
 		n.score.Total += k.score.Total
 		n.read += k.read
@@ -104,12 +188,13 @@ func (n *Node) pct() int {
 	return n.read * 100 / n.total
 }
 
-// eachFile calls fn on the files under n in folder order, until fn returns false.
+// eachFile calls fn on the files under n in folder order, until fn returns
+// false. In a plan they are the rows to read, in plan order.
 func (n *Node) eachFile(fn func(*Node) bool) bool {
 	if !n.dir {
 		return fn(n)
 	}
-	for _, k := range n.kids {
+	for _, k := range n.counted() {
 		if !k.eachFile(fn) {
 			return false
 		}
@@ -117,14 +202,22 @@ func (n *Node) eachFile(fn func(*Node) bool) bool {
 	return true
 }
 
-func (n *Node) Find(path string) *Node {
+// Find is the file saved under key, in the folder first and then in its
+// plans.
+func (n *Node) Find(key string) *Node {
 	var found *Node
-	n.eachFile(func(f *Node) bool {
-		if f.Path == path {
+	match := func(f *Node) bool {
+		if f.Key == key {
 			found = f
 		}
 		return found == nil
-	})
+	}
+	n.eachFile(match)
+	for _, k := range n.kids {
+		if k.plan && found == nil {
+			k.eachFile(match)
+		}
+	}
 	return found
 }
 
@@ -181,15 +274,29 @@ func (b *Model) Select(n *Node) {
 
 // NextUnread is the first file after `after` in folder order that is not
 // read to the end, wrapping around. With after nil it starts from the top.
+// After a row of a plan it is the next row of that plan.
 func (b *Model) NextUnread(after *Node) *Node {
 	var first, found *Node
 	seen := after == nil
-	b.Root.eachFile(func(f *Node) bool {
+	scope, walk := b.Root, b.Root.eachFile
+	if after != nil && after.parent != nil && after.parent.plan {
+		scope = after.parent
+		// Walk every row, so that starting from a group works too.
+		walk = func(fn func(*Node) bool) bool {
+			for _, k := range scope.kids {
+				if !fn(k) {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	walk(func(f *Node) bool {
 		if f == after {
 			seen = true
 			return true
 		}
-		if f.done == 0 {
+		if f.readable() && f.done == 0 {
 			if first == nil {
 				first = f
 			}
@@ -228,7 +335,7 @@ func (b *Model) Update(msg tea.KeyMsg) (open *Node, quit bool) {
 		if s := b.selected(); s != nil {
 			if s.dir {
 				b.dir = s
-			} else {
+			} else if s.readable() {
 				return s, false
 			}
 		}
@@ -237,7 +344,15 @@ func (b *Model) Update(msg tea.KeyMsg) (open *Node, quit bool) {
 			b.Select(b.dir)
 		}
 	case "n":
-		if u := b.NextUnread(b.selected()); u != nil {
+		after := b.selected()
+		if after != nil && after.plan && after.dir && len(after.kids) > 0 {
+			after = after.kids[0] // into the plan selected
+			if after.readable() && after.done == 0 {
+				b.Select(after)
+				break
+			}
+		}
+		if u := b.NextUnread(after); u != nil {
 			b.Select(u)
 		}
 	case "r":
@@ -246,11 +361,11 @@ func (b *Model) Update(msg tea.KeyMsg) (open *Node, quit bool) {
 			return f, false
 		}
 	case "x":
-		if s := b.selected(); s != nil && !s.dir {
+		if s := b.selected(); s != nil && s.readable() {
 			if s.done > 0 {
-				store.ClearProgress(s.Path)
+				store.ClearProgress(s.Key)
 			} else {
-				store.MarkDone(s.Path, s.stats.units())
+				store.MarkDone(s.Key, s.stats.units())
 			}
 			b.Refresh()
 		}
@@ -331,8 +446,12 @@ func (b *Model) View() string {
 }
 
 func (b *Model) header(w int) string {
-	r := b.Root
+	r, files := b.Root, "files"
 	left := theme.Fg(theme.Purple).Bold(true).Render(r.name)
+	if b.dir.plan {
+		r, files = b.dir, "items"
+		left = theme.Fg(theme.Plan).Bold(true).Render(planGlyph + r.name)
+	}
 	if b.active {
 		left += theme.Fg(theme.Green).Render("  ◆ active")
 	}
@@ -343,7 +462,7 @@ func (b *Model) header(w int) string {
 		theme.Fg(theme.Yellow).Render(strings.Repeat("━", filled)) +
 			theme.Fg(theme.Muted).Render(strings.Repeat("━", barW-filled)) +
 			theme.Fg(theme.Muted).Render(fmt.Sprintf(" %3d%%", r.pct())),
-		theme.Fg(theme.Foreground).Render(fmt.Sprintf("%d/%d files", r.done, r.files)),
+		theme.Fg(theme.Foreground).Render(fmt.Sprintf("%d/%d %s", r.done, r.files, files)),
 	}
 	if r.score.Total > 0 {
 		parts = append(parts, theme.Fg(scoreColor(r.score)).Render("◆ "+scoreText(r.score)))
@@ -367,7 +486,11 @@ func (b *Model) footer(w int) string {
 		parts = append(parts, fmt.Sprintf("r resume %s (%d%%)", f.name, f.pct()))
 	}
 	switch s := b.selected(); {
-	case s == nil:
+	case s == nil, s.group:
+	case s.missing:
+		parts = append(parts, "not found")
+	case s.plan && s.dir:
+		parts = append(parts, "l open plan")
 	case s.dir:
 		parts = append(parts, "l open folder")
 	case s.done > 0:
@@ -380,11 +503,16 @@ func (b *Model) footer(w int) string {
 	if b.dir.parent != nil {
 		parts = append(parts, "h up")
 	}
+	if b.dir.plan {
+		parts = append(parts, "n next in plan")
+	} else {
+		parts = append(parts, "n next unread")
+	}
 	active := "t active reading"
 	if b.active {
 		active = "t active off"
 	}
-	parts = append(parts, "n next unread", "s stats", active, "q quit", view.KeysHint)
+	parts = append(parts, "s stats", active, "q quit", view.KeysHint)
 	return theme.Fg(theme.Muted).Render(runewidth.Truncate(strings.Join(parts, " · "), w, "…"))
 }
 
@@ -405,13 +533,28 @@ func listColumn(dir, sel *Node, active bool, w, h int) []string {
 	return padColumn(lines, h)
 }
 
+// planGlyph starts the name of a plan.
+const planGlyph = "☰ "
+
 func entryRow(n *Node, w int, sel, active bool) string {
 	name, nameCol := n.name, theme.Foreground
-	if n.dir {
+	// A plan's row starts with its place in the outline.
+	lead, leadCol := "", theme.Plan
+	switch {
+	case n.plan && n.dir:
+		name, nameCol = planGlyph+name, theme.Plan
+	case n.dir:
 		name, nameCol = name+"/", theme.Blue
+	case n.plan:
+		lead = strings.Repeat("  ", n.depth) + n.num + " "
+		if n.group {
+			nameCol = theme.Plan
+		}
 	}
 	mark, markCol := "", theme.Muted
 	switch {
+	case n.missing:
+		mark, markCol, nameCol, leadCol = "missing", theme.Red, theme.Muted, theme.Muted
 	case n.files > 0 && n.done == n.files:
 		mark, markCol = "✓", theme.Green
 	case n.read > 0:
@@ -424,11 +567,12 @@ func entryRow(n *Node, w int, sel, active bool) string {
 		score = scoreText(n.score) + " "
 	}
 	side := runewidth.StringWidth(score) + runewidth.StringWidth(mark)
-	name = runewidth.Truncate(name, max(w-2-side-1, 1), "…")
-	gap := max(w-2-runewidth.StringWidth(name)-side, 1)
+	lead = runewidth.Truncate(lead, max(w-2-side-2, 0), "")
+	name = runewidth.Truncate(name, max(w-2-side-1-runewidth.StringWidth(lead), 1), "…")
+	gap := max(w-2-runewidth.StringWidth(lead)-runewidth.StringWidth(name)-side, 1)
 
 	st := lipgloss.NewStyle()
-	nameSt := nameCol.On(st)
+	nameSt := nameCol.On(st).Bold(n.group)
 	switch {
 	case sel && active:
 		st = st.Background(theme.Surface())
@@ -436,7 +580,7 @@ func entryRow(n *Node, w int, sel, active bool) string {
 	case sel:
 		nameSt = theme.Purple.On(nameSt).Bold(true)
 	}
-	return st.Render(" ") + nameSt.Render(name) + st.Render(strings.Repeat(" ", gap)) +
+	return st.Render(" ") + leadCol.On(st).Render(lead) + nameSt.Render(name) + st.Render(strings.Repeat(" ", gap)) +
 		scoreColor(n.score).On(st).Render(score) +
 		markCol.On(st).Render(mark) + st.Render(" ")
 }
@@ -446,8 +590,34 @@ func (b *Model) preview(n *Node, w, h int) []string {
 	if n == nil {
 		return padColumn(nil, h)
 	}
-	if n.dir {
+	switch {
+	case n.plan && n.dir:
+		return b.planPreview(n, w, h)
+	case n.dir:
 		return listColumn(n, nil, false, w, h)
+	case n.missing:
+		what := n.Path
+		if n.Frag != "" {
+			what += "#" + n.Frag
+		}
+		return padColumn([]string{theme.Fg(theme.Red).Render("not found"), "",
+			theme.Fg(theme.Muted).Render(runewidth.Truncate(what, w, "…"))}, h)
+	case n.group:
+		// The rows under it.
+		var lines []string
+		for _, k := range n.parent.kids {
+			if strings.HasPrefix(k.num, n.num+".") && len(lines) < h {
+				lines = append(lines, entryRow(k, w, false, false))
+			}
+		}
+		return padColumn(lines, h)
+	}
+	var lines []string
+	if n.note != "" {
+		for _, l := range strings.Split(lipgloss.NewStyle().Width(w).Render(n.note), "\n") {
+			lines = append(lines, theme.Fg(theme.Plan).Italic(true).Render(l))
+		}
+		lines = append(lines, "")
 	}
 	status := fmt.Sprintf("%s words · not started", thousands(n.total))
 	switch {
@@ -459,7 +629,7 @@ func (b *Model) preview(n *Node, w, h int) []string {
 	if n.score.Total > 0 {
 		status += " · questions " + scoreText(n.score)
 	}
-	lines := []string{theme.Fg(theme.Muted).Render(status), ""}
+	lines = append(lines, theme.Fg(theme.Muted).Render(status), "")
 	at := 0
 	if n.hasPos && !n.pos.Done && n.read > 0 {
 		at = n.pos.Unit
@@ -467,6 +637,26 @@ func (b *Model) preview(n *Node, w, h int) []string {
 	for i := max(at-2, 0); i < len(n.units) && len(lines) < h; i++ {
 		ul, _ := view.RenderUnit(&n.units[i], w, nil, i < at || n.done > 0)
 		lines = append(lines, ul...)
+	}
+	return padColumn(lines, h)
+}
+
+// planPreview shows a plan's description, then its rows.
+func (b *Model) planPreview(n *Node, w, h int) []string {
+	status := fmt.Sprintf("%d/%d items read", n.done, n.files)
+	if n.total > 0 {
+		status += fmt.Sprintf(" · %s / %s words · %d%%", thousands(n.read), thousands(n.total), n.pct())
+	}
+	lines := []string{theme.Fg(theme.Muted).Render(status), ""}
+	for i := range n.desc {
+		ul, _ := view.RenderUnit(&n.desc[i], w, nil, false)
+		lines = append(lines, ul...)
+	}
+	if len(n.desc) > 0 {
+		lines = append(lines, "")
+	}
+	for _, k := range n.kids {
+		lines = append(lines, entryRow(k, w, false, false))
 	}
 	return padColumn(lines, h)
 }
@@ -557,10 +747,10 @@ func thousands(n int) string {
 
 var browseKeys = []view.KeyRow{
 	{Key: "j / k / ↓ / ↑", Action: "move the selection"},
-	{Key: "l / → / enter", Action: "open the folder or file"},
+	{Key: "l / → / enter", Action: "open the folder, reading plan or file"},
 	{Key: "h / ← / -", Action: "go up a folder"},
 	{Key: "g / G", Action: "go to the first / last entry"},
-	{Key: "n", Action: "select the next file not read yet"},
+	{Key: "n", Action: "select the next file not read yet; in a plan, its next row"},
 	{Key: "r", Action: "reopen the last file you read"},
 	{Key: "x", Action: "mark the file read, or unread"},
 	{Key: "s", Action: "stats: words typed, speed and questions, here and everywhere"},

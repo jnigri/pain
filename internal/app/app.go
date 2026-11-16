@@ -3,9 +3,6 @@
 package app
 
 import (
-	"os"
-	"path/filepath"
-
 	tea "github.com/charmbracelet/bubbletea"
 
 	"pain/internal/browser"
@@ -19,11 +16,14 @@ type app struct {
 	root string
 	b    *browser.Model
 	doc  *reader.Model // nil while in the folder view
-	w, h int
+	// The entry the doc was opened from: a file can be both in the folder and
+	// in a reading plan.
+	opened *browser.Node
+	w, h   int
 }
 
 func New(root string) (*app, error) {
-	tree, err := browser.Scan(root, nil)
+	tree, err := browser.Load(root)
 	if err != nil {
 		return nil, err
 	}
@@ -38,9 +38,8 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.w, a.h = msg.Width, msg.Height
 		a.b.W, a.b.H = msg.Width, msg.Height
 	case reader.CloseMsg:
-		path := a.doc.Path
 		a.doc = nil
-		a.back(path, msg.Finished)
+		a.back(a.opened, msg.Finished)
 		return a, nil
 	}
 	if a.doc != nil {
@@ -60,10 +59,9 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // back shows the folder view on the file just left, or on the next unread
-// one once it is finished.
-func (a *app) back(path string, finished bool) {
+// one once it is finished. In a reading plan that is the plan's next row.
+func (a *app) back(n *browser.Node, finished bool) {
 	a.b.Refresh()
-	n := a.b.Root.Find(path)
 	if n == nil {
 		return
 	}
@@ -76,20 +74,20 @@ func (a *app) back(path string, finished bool) {
 }
 
 func (a *app) open(n *browser.Node) tea.Cmd {
-	src, err := os.ReadFile(n.Path)
-	if err != nil {
+	units, src, ok, err := markdown.Load(n.Path, n.Frag)
+	if err != nil || !ok {
 		return nil
 	}
-	units := markdown.ParseIn(src, filepath.Dir(n.Path))
-	a.b.Last = n.Path
-	store.SaveLastFile(a.root, n.Path)
-	m := reader.New(n.Path, src, units, store.LoadProgress(n.Path, len(units)), store.LoadPrefs())
+	a.opened = n
+	a.b.Last = n.Key
+	store.SaveLastFile(a.root, n.Key)
+	m := reader.New(n.Key, src, units, store.LoadProgress(n.Key, len(units)), store.LoadPrefs())
 	if m.Finished {
 		// Nothing to type in it.
-		a.back(n.Path, true)
+		a.back(n, true)
 		return nil
 	}
-	m.Folder, m.Scope = true, a.root
+	m.Folder, m.Scope, m.File = true, a.root, n.Path
 	m.Update(tea.WindowSizeMsg{Width: a.w, Height: a.h})
 	a.doc = m
 	return m.Init()

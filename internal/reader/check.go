@@ -412,7 +412,7 @@ func (m *Model) setExplain(on bool) {
 // reviewSystem is the system prompt for checking an explanation.
 func (m *Model) reviewSystem(a *askState) string {
 	return fmt.Sprintf("%s\n\nFile: %s\nPart: %s\n\n<file>\n%s\n</file>\n\n<part>\n%s\n</part>",
-		reviewPrompt, m.Path, a.revTitle, m.src, a.revText)
+		reviewPrompt, m.FilePath(), a.revTitle, m.src, a.revText)
 }
 
 // checkMark is the line that shows where a section ends with a checkpoint,

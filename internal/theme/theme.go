@@ -43,6 +43,7 @@ var (
 	Purple     = ansi("5")
 	Teal       = ansi("6")
 	Pink       = ansi("9")
+	Plan       = ansi("14") // reading plans: apart from blue folders and purple selection
 )
 
 // On sets c as the foreground of s.

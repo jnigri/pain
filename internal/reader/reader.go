@@ -49,7 +49,10 @@ type cached struct {
 }
 
 type Model struct {
+	// What progress, questions and asks are saved under: the file's path,
+	// with "#part" when only part of it is read, from a reading plan.
 	Path     string
+	File     string // the file read, when Path names part of it
 	src      []byte
 	units    []markdown.Unit
 	cur      int
@@ -121,6 +124,14 @@ func (m *Model) tick() {
 		m.typedSecs += min(now.Sub(m.lastKey), maxKeyGap).Seconds()
 	}
 	m.lastKey = now
+}
+
+// FilePath is the file read, without the part.
+func (m *Model) FilePath() string {
+	if m.File != "" {
+		return m.File
+	}
+	return m.Path
 }
 
 func New(path string, src []byte, units []markdown.Unit, start int, p store.Prefs) *Model {

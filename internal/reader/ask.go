@@ -481,7 +481,7 @@ func (m *Model) send() tea.Cmd {
 	if a.review {
 		system.WriteString(m.reviewSystem(a))
 	} else {
-		fmt.Fprintf(&system, "%s\n\nFile: %s\n", askPrompt, m.Path)
+		fmt.Fprintf(&system, "%s\n\nFile: %s\n", askPrompt, m.FilePath())
 		i := m.askedUnit(a.entry)
 		if i >= 0 {
 			if s := m.section(i); s != "" {
