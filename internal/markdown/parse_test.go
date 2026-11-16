@@ -2,14 +2,6 @@ package markdown
 
 import "testing"
 
-func str(cs []Cell) string {
-	rs := make([]rune, len(cs))
-	for i, c := range cs {
-		rs[i] = c.R
-	}
-	return string(rs)
-}
-
 func TestParseBlocks(t *testing.T) {
 	src := "# 1. Intro\n\nHello   *world*.\n\n- one\n- two\n\n```go\nx := 1\n```\n"
 	units := Parse([]byte(src))
