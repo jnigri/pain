@@ -25,6 +25,9 @@ type runKey struct {
 type Cursor struct {
 	Typed      []rune
 	WholeBlock bool // underline the whole block rather than the sentence
+	// Reading is for moving by sentence rather than typing: no cursor, and
+	// the sentence from it on is lit as the one being read.
+	Reading bool
 }
 
 // textWidth is the room left for u's cells at content width w, after the
@@ -47,10 +50,13 @@ func LineRanges(u *markdown.Unit, w int) [][2]int {
 func RenderUnit(u *markdown.Unit, w int, c *Cursor, done bool) (lines []string, cursorLine int) {
 	current := c != nil
 	var typed []rune
-	var sStart, sEnd int
+	var sStart, sEnd, readEnd int
 	if current {
 		typed = c.Typed
 		sStart, sEnd = markdown.Sentence(u.Cells, len(typed))
+		if c.Reading {
+			readEnd = sEnd
+		}
 		if c.WholeBlock {
 			sStart, sEnd = 0, len(u.Cells)
 		}
@@ -113,6 +119,8 @@ func RenderUnit(u *markdown.Unit, w int, c *Cursor, done bool) (lines []string, 
 			return theme.Done
 		case !current:
 			return theme.Pending
+		case i >= len(typed) && i < readEnd:
+			return theme.Reading
 		case i < len(typed):
 			if u.Cells[i].Skip || markdown.Matches(typed[i], u.Cells[i].R) {
 				return theme.Done

@@ -15,7 +15,9 @@ pain notes.md
 The file is shown rendered, not as raw Markdown: headings are colored, lists
 get bullets, code sits on its own background. Text you have not typed yet is
 dimmed. As you type, it lights up in its real style. The sentence you are on is
-underlined.
+underlined. When you move by sentence rather than type (the default), there is
+no cursor: the sentence you are reading is drawn a step brighter than the text
+before it.
 
 The colors come from your terminal's theme: text uses its foreground and its
 ANSI palette, and what is dimmed is drawn faint, so pain reads well on a light
@@ -410,7 +412,8 @@ under `internal/`, and imports only flow down this list:
 
 `view.RenderUnit` wraps a unit's cells to the content width (88 columns at
 most) and draws each cell according to its state: done, pending (dimmed),
-wrong, or cursor. Consecutive cells with the same look are grouped into one
+wrong, cursor, or reading (the sentence being read when not typing, brighter
+than done text). Consecutive cells with the same look are grouped into one
 styled run, so styling cost grows with style changes, not with characters.
 
 The view only renders the units around the cursor. Units other than the

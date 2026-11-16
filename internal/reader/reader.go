@@ -821,7 +821,7 @@ func (m *Model) footer(cw int) []string {
 
 // docLines is the document around the cursor, exactly bodyH lines tall.
 func (m *Model) docLines(cw, bodyH int) []string {
-	cur, curLine := view.RenderUnit(m.unit(), cw, &view.Cursor{Typed: m.typed, WholeBlock: m.sel != scopeSentence}, false)
+	cur, curLine := view.RenderUnit(m.unit(), cw, &view.Cursor{Typed: m.typed, WholeBlock: m.sel != scopeSentence, Reading: !m.prefs.Typing}, false)
 	cur = m.withGutter(m.cur, cur)
 
 	// Keep the cursor about a third of the way down the screen, then move the

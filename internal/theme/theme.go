@@ -71,6 +71,14 @@ var (
 	}
 )
 
+// The text being read when not typing, a step brighter than the terminal's
+// foreground: mixed from it at start, a palette guess otherwise.
+var brights = map[bool]Color{true: ansi("15"), false: ansi("0")}
+
+// Bright is the foreground pushed further from the background, for the
+// sentence being read.
+func Bright() Color { return brights[dark] }
+
 // Surface is the background behind code and the selected row.
 func Surface() lipgloss.TerminalColor { return lipgloss.Color(surfaces[dark][0]) }
 
@@ -92,6 +100,11 @@ func Detect() {
 	b, f := string(bg), string(fg)
 	dark = luminance(b) < 0.5
 	surfaces[dark] = [2]string{blend(b, f, 0.1), blend(b, f, 0.35)}
+	far := "#000000"
+	if dark {
+		far = "#ffffff"
+	}
+	brights[dark] = Color{c: lipgloss.Color(blend(f, far, 0.6))}
 }
 
 // systemDark tells whether macOS is in dark mode; elsewhere it guesses dark.
@@ -145,6 +158,7 @@ const (
 	Pending
 	Wrong
 	Cursor
+	Reading // the sentence being read, when not typing
 )
 
 type styleKey struct {
@@ -240,6 +254,13 @@ func CellStyle(u *markdown.Unit, f markdown.Attr, st State) lipgloss.Style {
 	case Cursor:
 		// Yellow behind the letter, which takes the background's color.
 		fg, reverse = Yellow, true
+	case Reading:
+		// Lit rather than dimmed: plain text a step brighter, colors as
+		// they are.
+		fg.faint = false
+		if fg.c == nil {
+			fg = Bright()
+		}
 	}
 	s := fg.On(lipgloss.NewStyle()).Bold(bold).Italic(ital).Reverse(reverse)
 	if bg != nil {
