@@ -20,6 +20,7 @@ import (
 	"pain/internal/store"
 	"pain/internal/theme"
 	"pain/internal/view"
+	"pain/ui/hold"
 )
 
 // Active reading ends each section of a file with a checkpoint: questions
@@ -95,94 +96,32 @@ type quizState struct {
 	picked int // the choice made, -1 before
 	right  int
 	done   bool // every question answered: the score
-	// armed is a choice whose key is held down: a bar fills for holdDelay
-	// and the answer counts once it is full, so a key hit by mistake does
-	// not answer. Terminals do not tell when a key is let go, so a held key
-	// is one whose auto-repeat keeps coming.
-	armed bool
-	armAt time.Time
-	hold  keyHold // the key held to arm the choice
-	// spent is the key that answered, ignored while it is still held so its
-	// repeats do not go on to the next question.
-	spent keyHold
 }
 
-// keyHold follows a key held down through its auto-repeat.
-type keyHold struct {
-	key      string
-	last     time.Time // when the key last came
-	repeated bool      // auto-repeat has started
-}
+// holdDelay is how long the key of a choice must be held for it to count,
+// so a key hit by mistake does not answer.
+const holdDelay = time.Second
 
-// held reports whether key, coming now, is the same key still held.
-func (h *keyHold) held(key string) bool {
-	if h.key == "" || key != h.key || h.released() {
-		return false
-	}
-	h.last, h.repeated = time.Now(), true
-	return true
-}
-
-// released reports whether the key has stopped coming: a key held down
-// repeats after a first, longer pause.
-func (h *keyHold) released() bool {
-	gap := repeatGap
-	if !h.repeated {
-		gap = firstRepeatGap
-	}
-	return time.Since(h.last) > gap
-}
-
-const (
-	// holdDelay is how long a key must be held for its choice to count. It
-	// is longer than firstRepeatGap, so a single press never answers.
-	holdDelay = time.Second
-	// firstRepeatGap and repeatGap are the longest waits for the next
-	// auto-repeat of a held key, before and after it starts.
-	firstRepeatGap = 700 * time.Millisecond
-	repeatGap      = 300 * time.Millisecond
-)
-
-// quizTickMsg moves the bar of an armed choice. id tells its arming apart
-// from earlier ones.
-type quizTickMsg struct{ id int }
-
-func armTick(id int) tea.Cmd {
-	return tea.Tick(40*time.Millisecond, func(time.Time) tea.Msg { return quizTickMsg{id} })
-}
-
-// arm selects a choice and starts filling its bar while key is held.
+// arm selects a choice and starts the hold that answers it, its underline
+// growing while key is held.
 func (m *Model) arm(pick int, key string) tea.Cmd {
-	q := m.quiz
-	q.sel, q.armed, q.armAt = pick, true, time.Now()
-	q.hold = keyHold{key: key, last: q.armAt}
-	m.armID++
-	return armTick(m.armID)
+	m.quiz.sel = pick
+	return m.hold.Start(key)
 }
 
-// armEvent drops the armed choice once its key is let go, and makes it
-// final once the bar is full.
-func (m *Model) armEvent(msg quizTickMsg) tea.Cmd {
-	q := m.quiz
-	if q == nil || !q.armed || msg.id != m.armID {
-		return nil
+// holdEvent moves the hold of a choice, and answers once it is complete.
+func (m *Model) holdEvent(msg hold.TickMsg) tea.Cmd {
+	done, cmd := m.hold.Update(msg)
+	if done && m.quiz != nil && m.quiz.qs != nil && !m.quiz.done && m.quiz.picked < 0 {
+		m.answer()
 	}
-	if q.hold.released() {
-		q.armed = false
-		return nil
-	}
-	if time.Since(q.armAt) < holdDelay {
-		return armTick(msg.id)
-	}
-	m.answer()
-	q.spent = q.hold
-	return nil
+	return cmd
 }
 
 // answer takes the selected choice as the answer.
 func (m *Model) answer() {
 	q := m.quiz
-	q.armed, q.picked = false, q.sel
+	q.picked = q.sel
 	m.sess.Answered++
 	if q.sel == q.qs[q.i].Answer {
 		q.right++
@@ -505,18 +444,19 @@ func (m *Model) updateQuiz(msg tea.KeyMsg) tea.Cmd {
 	q, c := m.quiz, m.check
 	key := msg.String()
 	next := key == "enter" || key == " "
-	// The repeats of a key held for a choice only keep its bar filling, and
-	// those of the key that answered are dropped.
-	if q.armed && q.hold.held(key) {
-		return nil
+	// The repeats of a key held for a choice only keep it going, and those
+	// of the key that answered are dropped.
+	if mine, cmd := m.hold.Repeat(key); mine {
+		return cmd
 	}
-	if q.spent.held(key) {
-		return nil
+	if m.hold.Running() {
+		// Any other key takes the choice back; another number arms its own.
+		m.hold.Cancel()
+		if key == "esc" {
+			return nil
+		}
 	}
-	q.spent = keyHold{}
 	switch {
-	case q.armed && key == "esc":
-		q.armed = false
 	case key == "esc" || key == "ctrl+c":
 		m.quiz = nil
 	case key == "tab" || key == "ctrl+e":
@@ -552,9 +492,9 @@ func (m *Model) updateQuiz(msg tea.KeyMsg) tea.Cmd {
 		pick := -1
 		switch {
 		case key == "up" || key == "k":
-			q.sel, q.armed = (q.sel+n-1)%n, false
+			q.sel = (q.sel + n - 1) % n
 		case key == "down" || key == "j":
-			q.sel, q.armed = (q.sel+1)%n, false
+			q.sel = (q.sel + 1) % n
 		case next:
 			pick = q.sel
 		case len(key) == 1 && key[0] >= '1' && int(key[0]-'1') < n:
@@ -613,14 +553,7 @@ func (m *Model) quizView() string {
 		help = "enter carry on · r answer again · ctrl+r new questions · ctrl+e explain it too"
 	default:
 		cur := q.qs[q.i]
-		// The bar of an armed choice fills over the question.
-		bar := ""
-		if q.armed {
-			filled := min(int(float64(cw)*float64(time.Since(q.armAt))/float64(holdDelay)), cw)
-			bar = theme.Fg(theme.Yellow).Render(strings.Repeat("━", filled)) +
-				lipgloss.NewStyle().Foreground(theme.Surface()).Render(strings.Repeat("━", cw-filled))
-		}
-		lines = append(lines, theme.Fg(theme.Muted).Render(fmt.Sprintf("question %d of %d", q.i+1, len(q.qs))), bar)
+		lines = append(lines, theme.Fg(theme.Muted).Render(fmt.Sprintf("question %d of %d", q.i+1, len(q.qs))), "")
 		lines = append(lines, wrapped(bold, cur.Q, cw, "")...)
 		lines = append(lines, "")
 		for i, ch := range cur.Choices {
@@ -635,10 +568,18 @@ func (m *Model) quizView() string {
 			case q.picked >= 0:
 				st = theme.Fg(theme.Muted)
 			}
-			lines = append(lines, wrapped(st, ch, cw, mark+theme.Fg(theme.Muted).Render(fmt.Sprintf("%d  ", i+1)))...)
+			lead := mark + theme.Fg(theme.Muted).Render(fmt.Sprintf("%d  ", i+1))
+			chl := wrapped(st, ch, cw, lead)
+			// The choice being held underlines as the key is held.
+			if m.hold.Running() && q.picked < 0 && i == q.sel {
+				for k, l := range chl {
+					chl[k] = hold.Underline(l, lipgloss.Width(lead), cw, m.hold.Progress(), hold.DefaultLook)
+				}
+			}
+			lines = append(lines, chl...)
 		}
 		help = "↑/↓ move · hold enter or 1–" + fmt.Sprint(len(cur.Choices)) + " to answer · ctrl+e explain it instead · esc skip"
-		if q.armed {
+		if m.hold.Running() {
 			help = fmt.Sprintf("answering %d… · keep holding · let go or esc to take it back", q.sel+1)
 		}
 		if q.picked >= 0 {

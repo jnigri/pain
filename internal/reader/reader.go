@@ -16,6 +16,7 @@ import (
 	"pain/internal/store"
 	"pain/internal/theme"
 	"pain/internal/view"
+	"pain/ui/hold"
 )
 
 const maxWidth = 88
@@ -84,7 +85,7 @@ type Model struct {
 	Scope  string
 	check  *checks    // nil unless the file is read actively
 	quiz   *quizState // the checkpoint asking questions, while open
-	armID  int        // counts the choices armed, to drop the ticks of earlier ones
+	hold   hold.Hold  // the key held to answer a question
 	notice string     // shown in place of the help until the next key
 	closed bool       // the folder view was asked to take over
 }
@@ -123,7 +124,7 @@ func (m *Model) tick() {
 }
 
 func New(path string, src []byte, units []markdown.Unit, start int, p store.Prefs) *Model {
-	m := &Model{Path: path, src: src, units: units, cache: map[int]cached{}, prefs: p, secs: splitSections(units)}
+	m := &Model{Path: path, src: src, units: units, cache: map[int]cached{}, prefs: p, secs: splitSections(units), hold: hold.New(holdDelay)}
 	m.countTotal()
 	m.loadAsked()
 	m.cur = start - 1
@@ -188,8 +189,8 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cache = map[int]cached{}
 	case askDeltaMsg, askDoneMsg:
 		return m, m.askEvent(msg)
-	case quizTickMsg:
-		return m, m.armEvent(msg)
+	case hold.TickMsg:
+		return m, m.holdEvent(msg)
 	case tea.KeyMsg:
 		m.notice = ""
 		// The key list closes on any key.

@@ -18,6 +18,10 @@ description = "Run pain on the bundled tour"
 depends = ["build"]
 run = "pain samples/tour.md"
 
+[tasks.stories]
+description = "Try the UI components under ui/ on their own"
+run = "go run ./ui/cmd/stories"
+
 [tasks.check]
 description = "Format check, vet and test"
 run = [

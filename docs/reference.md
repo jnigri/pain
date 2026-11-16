@@ -298,11 +298,12 @@ questions. pain remembers the one you used last.
   quick multiple-choice questions per section, in the background while you
   type: short choices, on the main point, never trick questions. At
   the checkpoint, pick a choice with `↑` / `↓` and `enter`, or with its number,
-  and keep the key held: a bar fills over the question, and the answer counts
-  once it is full, after a second. Letting go before, or `esc`, takes it back,
-  so a key hit by mistake does not answer. Terminals do not tell when a key is
-  let go, so pain watches the key repeat: with key repeat turned off in the
-  system settings, no answer counts.
+  and keep the key held: the choice underlines from the left as you hold, and
+  the answer counts once the underline is full, after a second. Letting go
+  before, or `esc`, takes it back, so a key hit by mistake does not answer.
+  Terminals do not tell when a key is let go, so pain watches the key repeat,
+  and learns its pace: the underline goes about a tenth of a second after you
+  let go. With key repeat turned off in the system settings, no answer counts.
   pain shows the right choice and one line on why, then your score. On the
   score, `r` answers the same questions again, with the choices in another
   order. `ctrl+r` has Claude write new questions for the section, at any
@@ -382,7 +383,8 @@ extensions for tables, task lists and strikethrough).
 ### Packages
 
 `main.go` parses flags and starts the right screen. Everything else lives
-under `internal/`, and imports only flow down this list:
+under `internal/`, and imports only flow down this list, apart from the
+components under `ui/` that any of them may use:
 
 | Package    | Role |
 |------------|------|
@@ -394,6 +396,16 @@ under `internal/`, and imports only flow down this list:
 | `reader`   | the file view: key handling, typing rules, viewport, asking Claude (`ask.go` runs `claude -p` and reads its stream, `askview.go` draws it), active reading (`sections.go` cuts a file into sections, `check.go` holds the checkpoints and the explanations), the preferences and key screens |
 | `browser`  | the folder view: scanning the folder, the three columns, reading progress and scores per file, the stats screen |
 | `app`      | folder mode: switches between `browser` and `reader` |
+
+Under `ui/` are UI components that stand on their own: they know nothing of
+pain and import nothing from `internal/`. Each package lists `Stories` that
+show it alone, and `mise run stories` (`go run ./ui/cmd/stories`) opens them,
+to try a component out without a file and a checkpoint to get to it.
+
+| Package      | Role |
+|--------------|------|
+| `ui/hold`    | hold-to-confirm: follows a key held down through its auto-repeat, and `Underline` draws its progress under a line |
+| `ui/story`   | the story runner: a list of stories, each a Bubble Tea model shown on its own |
 
 ### Core types
 
